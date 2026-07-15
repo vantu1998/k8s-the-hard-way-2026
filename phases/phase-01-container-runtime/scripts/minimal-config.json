@@ -1,0 +1,87 @@
+{
+  "ociVersion": "1.0.2",
+  "process": {
+    "terminal": true,
+    "user": {
+      "uid": 0,
+      "gid": 0
+    },
+    "args": ["/bin/sh"],
+    "env": [
+      "PATH=/bin:/usr/bin:/sbin:/usr/sbin",
+      "TERM=xterm"
+    ],
+    "cwd": "/",
+    "capabilities": {
+      "bounding": ["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"],
+      "effective": ["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"],
+      "permitted": ["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"]
+    }
+  },
+  "root": {
+    "path": "rootfs",
+    "readonly": false
+  },
+  "hostname": "mycontainer",
+  "mounts": [
+    {
+      "destination": "/proc",
+      "type": "proc",
+      "source": "proc"
+    },
+    {
+      "destination": "/dev",
+      "type": "tmpfs",
+      "source": "tmpfs",
+      "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]
+    },
+    {
+      "destination": "/dev/pts",
+      "type": "devpts",
+      "source": "devpts",
+      "options": ["nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620"]
+    },
+    {
+      "destination": "/dev/shm",
+      "type": "tmpfs",
+      "source": "shm",
+      "options": ["nosuid", "noexec", "nodev", "mode=1777", "size=65536k"]
+    },
+    {
+      "destination": "/dev/mqueue",
+      "type": "mqueue",
+      "source": "mqueue",
+      "options": ["nosuid", "noexec", "nodev"]
+    },
+    {
+      "destination": "/sys",
+      "type": "sysfs",
+      "source": "sysfs",
+      "options": ["nosuid", "noexec", "nodev", "ro"]
+    },
+    {
+      "destination": "/sys/fs/cgroup",
+      "type": "cgroup",
+      "source": "cgroup",
+      "options": ["nosuid", "noexec", "nodev", "relatime", "ro"]
+    }
+  ],
+  "linux": {
+    "namespaces": [
+      {"type": "pid"},
+      {"type": "network"},
+      {"type": "mount"},
+      {"type": "ipc"},
+      {"type": "uts"}
+    ],
+    "resources": {
+      "memory": {
+        "limit": 536870912
+      },
+      "cpu": {
+        "quota": 50000,
+        "period": 100000
+      }
+    }
+  }
+}
