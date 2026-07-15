@@ -1,0 +1,26 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets — KHÔNG commit chứng chỉ, key, kubeconfig
+*.pem
+*.crt
+*.key
+*.kube
+kubeconfig*
+.env
+.env.*
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Vagrant
+.vagrant/
