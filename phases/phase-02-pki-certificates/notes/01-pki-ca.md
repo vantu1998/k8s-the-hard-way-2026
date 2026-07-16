@@ -218,26 +218,85 @@ cat > ca-config.json << 'EOF'
 EOF
 ```
 
-### Giải thích
+### Giải thích cấu trúc JSON
 
 | Field | Ý nghĩa |
 |-------|---------|
-| `signing.default` | Profile mặc định khi ký không chỉ định profile |
-| `signing.profiles.server` | Profile cho server cert — EKU: `serverAuth` |
-| `signing.profiles.client` | Profile cho client cert — EKU: `clientAuth` |
-| `signing.profiles.peer` | Profile cho mTLS cert — EKU: cả `serverAuth` + `clientAuth` |
-| `expiry` | Validity period — `8760h` = 1 năm |
-| `usages` | Key usage + EKU — `signing` = digitalSignature, `key encipherment` = keyEncipherment |
+| `signing` | Root section — mọi config liên quan đến ký cert đều nằm trong đây |
+| `signing.default` | Profile mặc định khi ký **không chỉ định** `-profile` |
+| `signing.profiles` | Named profiles — chọn bằng `-profile=<name>` khi gọi `cfssl gencert` |
+| `signing.profiles.server` | Profile cho server cert (apiserver, kubelet server, etcd server) |
+| `signing.profiles.client` | Profile cho client cert (admin, scheduler, controller-manager) |
+| `signing.profiles.peer` | Profile cho mTLS cert (etcd peer, kubelet — cả server + client) |
+| `expiry` | Validity period — cfssl dùng Go `time.Duration` format: `8760h` = 1 năm, `87600h` = 10 năm |
+| `usages` | Array string — ánh xạ sang X509 Key Usage (KU) + Extended Key Usage (EKU) |
 
-### Usages trong cfssl
+### KU (Key Usage) vs EKU (Extended Key Usage) — thuật ngữ
 
-| cfssl usage | X509 KU/EKU |
-|-------------|-------------|
-| `signing` | digitalSignature |
-| `key encipherment` | keyEncipherment |
-| `server auth` | extendedKeyUsage: serverAuth |
-| `client auth` | extendedKeyUsage: clientAuth |
-| `cert sign` | keyCertSign (chỉ CA) |
+X509 certificate có 2 extension liên quan đến mục đích sử dụng:
+
+**Key Usage (KU)** — mục đích **cơ bản** của key, định nghĩa trong RFC 5280 section 4.2.1.3:
+
+| KU flag | Ý nghĩa | Dùng cho |
+|---------|---------|----------|
+| `digitalSignature` | Ký digital (TLS handshake, JWT) | Mọi cert (trừ SA key) |
+| `keyEncipherment` | Mã hóa symmetric key bằng RSA | Server/client cert (RSA key exchange) |
+| `keyCertSign` | Ký cert khác | **Chỉ CA** |
+| `cRLSign` | Ký CRL (Certificate Revocation List) | **Chỉ CA** |
+| `keyAgreement` | DH/ECDH key agreement | (hiếm dùng trong K8s) |
+
+**Extended Key Usage (EKU)** — mục đích **cụ thể hơn**, định nghĩa trong RFC 5280 section 4.2.1.12:
+
+| EKU flag | OID | Ý nghĩa |
+|----------|-----|---------|
+| `serverAuth` | 1.3.6.1.5.5.7.3.1 | Cert dùng cho **TLS server** — server trình cert cho client |
+| `clientAuth` | 1.3.6.1.5.5.7.3.2 | Cert dùng cho **TLS client** — client trình cert cho server (mTLS) |
+| `codeSigning` | 1.3.6.1.5.5.7.3.3 | Ký code executable |
+| `emailProtection` | 1.3.6.1.5.5.7.3.4 | Email S/MIME |
+
+> **Tóm lại**: KU trả lời "key này làm gì được?" (ký, mã hóa, ký cert). EKU trả lời "key này dùng trong **ngữ cảnh nào**?" (TLS server, TLS client).
+
+### cfssl `usages` — cú pháp hay lấy từ đâu?
+
+Các string trong `usages` array (`"signing"`, `"key encipherment"`, `"server auth"`, ...) là **cú pháp riêng của cfssl** — không phải X509 term chuẩn. cfssl định nghĩa các string này trong source code ([`cfssl/config/config.go`](https://github.com/cloudflare/cfssl/blob/master/config/config.go)) và **ánh xạ** sang X509 KU/EKU tương ứng.
+
+#### Bảng ánh xạ đầy đủ: cfssl usage → X509
+
+| cfssl usage string | Loại | X509 extension | Giải thích |
+|--------------------|------|----------------|------------|
+| `"signing"` | KU | `digitalSignature` | Key dùng để ký digital (TLS handshake signature) |
+| `"key encipherment"` | KU | `keyEncipherment` | Key dùng để mã hóa symmetric key (RSA key exchange) |
+| `"cert sign"` | KU | `keyCertSign` | Key dùng để ký cert khác — **chỉ CA** |
+| `"crl sign"` | KU | `cRLSign` | Key dùng để ký CRL — **chỉ CA** |
+| `"server auth"` | EKU | `serverAuth` (OID 1.3.6.1.5.5.7.3.1) | Cert hợp lệ cho TLS server |
+| `"client auth"` | EKU | `clientAuth` (OID 1.3.6.1.5.5.7.3.2) | Cert hợp lệ cho TLS client (mTLS) |
+| `"code signing"` | EKU | `codeSigning` | Cert hợp lệ cho ký code |
+| `"email protection"` | EKU | `emailProtection` | Cert hợp lệ cho S/MIME |
+
+> **Lưu ý**: cfssl **không phân biệt** KU vs EKU trong config — gộp chung vào `usages` array. cfssl tự nhận biết: `"signing"` → KU, `"server auth"` → EKU. Khi cert được tạo, cfssl set đúng KU và EKU extension tương ứng.
+
+### Ví dụ: profile `peer` tạo cert gì?
+
+```json
+"peer": {
+  "expiry": "8760h",
+  "usages": ["signing", "key encipherment", "server auth", "client auth"]
+}
+```
+
+→ cfssl tạo cert với:
+- **KU**: `digitalSignature` + `keyEncipherment` (từ `"signing"` + `"key encipherment"`)
+- **EKU**: `serverAuth` + `clientAuth` (từ `"server auth"` + `"client auth"`)
+
+```bash
+# Verify bằng openssl:
+openssl x509 -in etcd-peer.pem -text -noout | grep -A1 "Key Usage"
+# X509v3 Key Usage: digitalSignature, keyEncipherment          ← KU
+# X509v3 Extended Key Usage: TLS Web Server Authentication,    ← EKU
+#   TLS Web Client Authentication
+```
+
+→ Cert này dùng được cho **mTLS** — vừa là server (serverAuth) vừa là client (clientAuth).
 
 ## Kubernetes CA hierarchy
 
