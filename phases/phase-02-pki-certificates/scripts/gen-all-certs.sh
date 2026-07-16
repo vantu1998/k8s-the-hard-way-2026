@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: ./gen-all-certs.sh [cert_dir]
 # Environment variables for customization:
 #   MASTER1_IP, MASTER2_IP, MASTER3_IP, WORKER1_IP, WORKER2_IP
-#   K8S_SERVICE_IP, DNS_DOMAIN
+#   K8S_SERVICE_IP, DNS_DOMAIN, LB_IP, LB_DOMAIN
 
 CERT_DIR="${1:-./certs}"
 CA_EXPIRY="87600h"
@@ -19,6 +19,8 @@ WORKER1_IP="${WORKER1_IP:-10.0.0.4}"
 WORKER2_IP="${WORKER2_IP:-10.0.0.5}"
 K8S_SERVICE_IP="${K8S_SERVICE_IP:-10.96.0.1}"
 DNS_DOMAIN="${DNS_DOMAIN:-cluster.local}"
+LB_IP="${LB_IP:-}"
+LB_DOMAIN="${LB_DOMAIN:-}"
 
 mkdir -p "${CERT_DIR}"
 
@@ -58,6 +60,7 @@ echo "=== Kubernetes Certificate Generator (cfssl) ==="
 echo "  Masters: ${MASTER1_IP}, ${MASTER2_IP}, ${MASTER3_IP}"
 echo "  Workers: ${WORKER1_IP}, ${WORKER2_IP}"
 echo "  Service IP: ${K8S_SERVICE_IP}"
+echo "  Load Balancer: ${LB_IP:-none}${LB_DOMAIN:+ (${LB_DOMAIN})}"
 echo ""
 
 # --- 0. ca-config.json ---
@@ -87,7 +90,7 @@ echo "  ✓ sa.key + sa.pub"
 # --- 2. apiserver ---
 echo ""
 echo "--- kube-apiserver ---"
-APISERVER_HOSTS="[\"kubernetes\",\"kubernetes.default\",\"kubernetes.default.svc\",\"kubernetes.default.svc.${DNS_DOMAIN}\",\"localhost\",\"${K8S_SERVICE_IP}\",\"${MASTER1_IP}\",\"${MASTER2_IP}\",\"${MASTER3_IP}\",\"127.0.0.1\"]"
+APISERVER_HOSTS="[\"kubernetes\",\"kubernetes.default\",\"kubernetes.default.svc\",\"kubernetes.default.svc.${DNS_DOMAIN}\",\"localhost\",\"${K8S_SERVICE_IP}\",\"${MASTER1_IP}\",\"${MASTER2_IP}\",\"${MASTER3_IP}\",\"127.0.0.1\"${LB_IP:+,\"${LB_IP}\"}${LB_DOMAIN:+,\"${LB_DOMAIN}\"}]"
 
 gen_cert apiserver "kube-apiserver" ca server "${APISERVER_HOSTS}" "[{\"CN\":\"kube-apiserver\"}]"
 verify_cert apiserver ca

@@ -143,7 +143,8 @@ cp apiserver-key.pem apiserver.key
   "hosts": [
     "kubernetes", "kubernetes.default", "kubernetes.default.svc",
     "kubernetes.default.svc.cluster.local", "localhost",
-    "10.96.0.1", "10.0.0.1", "127.0.0.1"
+    "10.96.0.1", "10.0.0.1", "127.0.0.1",
+    "192.168.56.100", "k8s-api.example.com"
   ],
   "key": {"algo": "rsa", "size": 2048},
   "names": [{"CN": "kube-apiserver"}]

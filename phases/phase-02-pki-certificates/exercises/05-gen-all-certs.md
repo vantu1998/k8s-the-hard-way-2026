@@ -23,6 +23,8 @@ WORKER1_IP="10.0.0.4"
 WORKER2_IP="10.0.0.5"
 K8S_SERVICE_IP="10.96.0.1"
 DNS_DOMAIN="cluster.local"
+LB_IP=""           # Load balancer IP (nếu có)
+LB_DOMAIN=""       # Load balancer domain (nếu có, ví dụ k8s-api.example.com)
 ```
 
 ## Bước 2: Viết script gen-all-certs.sh
@@ -45,6 +47,8 @@ WORKER1_IP="${WORKER1_IP:-10.0.0.4}"
 WORKER2_IP="${WORKER2_IP:-10.0.0.5}"
 K8S_SERVICE_IP="${K8S_SERVICE_IP:-10.96.0.1}"
 DNS_DOMAIN="${DNS_DOMAIN:-cluster.local}"
+LB_IP="${LB_IP:-}"
+LB_DOMAIN="${LB_DOMAIN:-}"
 
 CERT_DIR="${CERT_DIR:-./certs}"
 DAYS_H="8760h"
@@ -56,6 +60,7 @@ echo "=== Kubernetes Certificate Generator (cfssl) ==="
 echo "  Masters: ${MASTER1_IP}, ${MASTER2_IP}, ${MASTER3_IP}"
 echo "  Workers: ${WORKER1_IP}, ${WORKER2_IP}"
 echo "  Service IP: ${K8S_SERVICE_IP}"
+echo "  Load Balancer: ${LB_IP:-none}${LB_DOMAIN:+ (${LB_DOMAIN})}"
 echo "  Output: ${CERT_DIR}"
 echo ""
 
@@ -148,7 +153,7 @@ echo "  ✓ sa.key + sa.pub"
 echo ""
 echo "--- kube-apiserver ---"
 
-APISERVER_HOSTS="[\"kubernetes\",\"kubernetes.default\",\"kubernetes.default.svc\",\"kubernetes.default.svc.${DNS_DOMAIN}\",\"localhost\",\"${K8S_SERVICE_IP}\",\"${MASTER1_IP}\",\"${MASTER2_IP}\",\"${MASTER3_IP}\",\"127.0.0.1\"]"
+APISERVER_HOSTS="[\"kubernetes\",\"kubernetes.default\",\"kubernetes.default.svc\",\"kubernetes.default.svc.${DNS_DOMAIN}\",\"localhost\",\"${K8S_SERVICE_IP}\",\"${MASTER1_IP}\",\"${MASTER2_IP}\",\"${MASTER3_IP}\",\"127.0.0.1\"${LB_IP:+,\"${LB_IP}\"}${LB_DOMAIN:+,\"${LB_DOMAIN}\"}]"
 
 gen_cert apiserver "kube-apiserver" ca server "${APISERVER_HOSTS}" "[{\"CN\":\"kube-apiserver\"}]"
 verify_cert apiserver ca
@@ -254,10 +259,11 @@ chmod +x gen-all-certs.sh
 # Chạy với default config
 ./gen-all-certs.sh
 
-# Hoặc custom
+# Hoặc custom (có load balancer)
 MASTER1_IP=192.168.1.10 MASTER2_IP=192.168.1.11 MASTER3_IP=192.168.1.12 \
 WORKER1_IP=192.168.1.20 WORKER2_IP=192.168.1.21 \
 K8S_SERVICE_IP=10.96.0.1 \
+LB_IP=192.168.1.100 LB_DOMAIN=k8s-api.example.com \
 ./gen-all-certs.sh
 ```
 
@@ -268,6 +274,7 @@ Output:
   Masters: 10.0.0.1, 10.0.0.2, 10.0.0.3
   Workers: 10.0.0.4, 10.0.0.5
   Service IP: 10.96.0.1
+  Load Balancer: none
   Output: ./certs
 
 --- Creating CAs ---
@@ -346,6 +353,7 @@ cfssl certinfo -cert apiserver.pem | jq '.certificates[0].subject_alt_name'
 #   "DNS_names": ["kubernetes", "kubernetes.default", "kubernetes.default.svc",
 #                 "kubernetes.default.svc.cluster.local", "localhost"],
 #   "IP_addresses": ["10.96.0.1", "10.0.0.1", "10.0.0.2", "10.0.0.3", "127.0.0.1"]
+#   # Nếu có LB_IP/LB_DOMAIN sẽ xuất hiện thêm trong DNS_names/IP_addresses
 # }
 
 # Etcd peer SAN
