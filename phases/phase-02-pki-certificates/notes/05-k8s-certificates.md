@@ -267,6 +267,42 @@ openssl rsa -in sa.key -pubout -out sa.pub
 # Không cần CA, không cần cert, không cần SAN
 ```
 
+## Cheat sheet — không cần nhớ từng cert
+
+### Nguyên tắc cốt lõi
+
+> **Mỗi component cần cert để chứng minh "tao là ai" khi nói chuyện với component khác. Ai là server thì cần server cert, ai là client thì cần client cert, ai vừa server vừa client thì cần peer cert.**
+
+### Phân theo vai trò
+
+| Vai trò | Component | Loại cert |
+|---------|-----------|-----------|
+| **Server** | apiserver, etcd, kubelet | Server cert (có SAN) |
+| **Client** | scheduler, controller-manager, admin, apiserver→etcd, apiserver→kubelet | Client cert |
+| **Vừa server vừa client** | etcd peer↔peer, kubelet↔apiserver | Peer cert (mTLS) |
+
+### 3 CA cô lập 3 trust domain
+
+```
+ca.pem          → mọi thứ Kubernetes (apiserver, kubelet, scheduler, admin...)
+etcd-ca.pem     → mọi thứ etcd (server, peer, healthcheck, apiserver-etcd-client)
+front-proxy-ca  → aggregation layer (front-proxy-client)
+```
+
+### Profile = extended key usage, không phải 1 chiều vs 2 chiều
+
+| Profile | Usages | Dùng khi |
+|---------|--------|----------|
+| `server` | `serverAuth` | Component là server (apiserver, etcd server) |
+| `client` | `clientAuth` | Component là client (scheduler, admin, apiserver→etcd) |
+| `peer` | `serverAuth` + `clientAuth` | Component vừa server vừa client (etcd peer, kubelet) |
+
+> K8s internal hầu hết đều **mTLS 2 chiều** — cả server lẫn client đều present cert. Profile chỉ quy định cert **được phép** làm gì, không quyết định 1 chiều hay 2 chiều.
+
+### Khi cần chi tiết
+
+Mở file này xem bảng đầy đủ ở phần **Danh sách đầy đủ**. Script `gen-all-certs.sh` tự gen hết — không cần nhớ gì cả.
+
 ## Liên hệ với Kubernetes
 
 - **kubeadm** tự tạo tất cả cert này khi `kubeadm init` → nằm trong `/etc/kubernetes/pki/` (dùng cfssl internal).
