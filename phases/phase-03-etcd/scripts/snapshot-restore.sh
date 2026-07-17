@@ -9,9 +9,9 @@ set -euo pipefail
 #
 # Examples:
 #   ./snapshot-restore.sh save
-#   ./snapshot-restore.sh save /backup/etcd.db https://10.0.0.1:2379 /etc/etcd
+#   ./snapshot-restore.sh save /backup/etcd.db https://192.168.56.11:2379 /etc/etcd
 #   ./snapshot-restore.sh status /backup/etcd.db
-#   ./snapshot-restore.sh restore /backup/etcd.db etcd-1 10.0.0.1 "etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380"
+#   ./snapshot-restore.sh restore /backup/etcd.db controlplane01 192.168.56.11 "controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380"
 
 ACTION="${1:?Usage: $0 {save|status|restore} ...}"
 CERT_DIR="${CERT_DIR:-/etc/etcd}"
@@ -47,7 +47,7 @@ case "${ACTION}" in
     SNAPSHOT_FILE="${2:?Usage: $0 restore <snapshot-file> <node-name> <node-ip> <cluster-spec> [data-dir]}"
     NODE_NAME="${3:?Missing node-name}"
     NODE_IP="${4:?Missing node-ip}"
-    CLUSTER_SPEC="${5:?Missing cluster-spec (e.g. etcd-1=https://10.0.0.1:2380,...)}"
+    CLUSTER_SPEC="${5:?Missing cluster-spec (e.g. controlplane01=https://192.168.56.11:2380,...)}"
     DATA_DIR="${6:-/var/lib/etcd}"
     CLUSTER_TOKEN="${CLUSTER_TOKEN:-etcd-cluster-2026}"
 

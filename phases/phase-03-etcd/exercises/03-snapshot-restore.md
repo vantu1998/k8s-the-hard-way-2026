@@ -14,7 +14,7 @@ Disaster recovery là kỹ năng quan trọng nhất với etcd. Bài này mô p
 
 ```bash
 export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=https://10.0.0.1:2379
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
 export ETCDCTL_CACERT=/etc/etcd/etcd-ca.pem
 export ETCDCTL_CERT=/etc/etcd/etcd-server.pem
 export ETCDCTL_KEY=/etc/etcd/etcd-server-key.pem
@@ -64,10 +64,10 @@ scp /tmp/etcd-backup.db backup-server:/backup/
 cp /tmp/etcd-backup.db /tmp/etcd-backup-copy.db
 ```
 
-## Bước 4: Mô phỏng disaster — kill etcd-3
+## Bước 4: Mô phỏng disaster — kill controlplane03
 
 ```bash
-# Trên etcd-3:
+# Trên controlplane03:
 sudo systemctl stop etcd
 
 # Xóa data dir (mô phỏng disk failure)
@@ -77,12 +77,12 @@ sudo rm -rf /var/lib/etcd
 ## Bước 5: Kiểm tra cluster vẫn hoạt động (2/3 node)
 
 ```bash
-# Từ etcd-1 hoặc etcd-2:
+# Từ controlplane01 hoặc controlplane02:
 etcdctl endpoint health \
-  --endpoints=https://10.0.0.1:2379,https://10.0.0.2:2379,https://10.0.0.3:2379
-# https://10.0.0.1:2379 is healthy
-# https://10.0.0.2:2379 is healthy
-# https://10.0.0.3:2379 is unhealthy: failed to connect
+  --endpoints=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
+# https://192.168.56.11:2379 is healthy
+# https://192.168.56.12:2379 is healthy
+# https://192.168.56.13:2379 is unhealthy: failed to connect
 
 # Cluster vẫn có quorum (2/3) → write vẫn hoạt động
 etcdctl put /app/status "still-working"
@@ -94,18 +94,18 @@ etcdctl get /app/status
 
 **Kiểm tra**: Cluster 2 node vẫn healthy, write thành công.
 
-## Bước 6: Restore etcd-3 từ snapshot
+## Bước 6: Restore controlplane03 từ snapshot
 
 ### Cách 1: Rejoin cluster (không cần restore — Raft sync)
 
 ```bash
-# Trên etcd-3: chỉ cần start lại etcd — Raft sẽ sync data từ leader
+# Trên controlplane03: chỉ cần start lại etcd — Raft sẽ sync data từ leader
 sudo mkdir -p /var/lib/etcd
 sudo systemctl start etcd
 
 # Kiểm tra
 etcdctl endpoint status --write-out=table
-# 3 node đều started, etcd-3 đã sync data
+# 3 node đều started, controlplane03 đã sync data
 ```
 
 > **Cách này đơn giản nhất** — chỉ cần restart etcd, Raft tự đồng bộ.
@@ -113,15 +113,15 @@ etcdctl endpoint status --write-out=table
 ### Cách 2: Restore từ snapshot (khi cần recover data cũ)
 
 ```bash
-# Trên etcd-3:
+# Trên controlplane03:
 sudo systemctl stop etcd
 sudo rm -rf /var/lib/etcd
 
 # Restore từ snapshot
 etcdctl snapshot restore /tmp/etcd-backup.db \
-  --name=etcd-3 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.3:2380 \
+  --name=controlplane03 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.13:2380 \
   --initial-cluster-token=etcd-cluster-2026 \
   --data-dir=/var/lib/etcd
 
@@ -130,7 +130,7 @@ etcdctl snapshot restore /tmp/etcd-backup.db \
 sudo systemctl start etcd
 ```
 
-**Kiểm tra**: etcd-3 start, join cluster, data đồng bộ.
+**Kiểm tra**: controlplane03 start, join cluster, data đồng bộ.
 
 ## Bước 7: Verify cluster 3 node
 
@@ -139,9 +139,9 @@ etcdctl endpoint status --write-out=table
 # +----------------+------------------+---------+---------+-----------+
 # |    ENDPOINT    |        ID        | VERSION | DB SIZE | IS LEADER |
 # +----------------+------------------+---------+---------+-----------+
-# | 10.0.0.1:2379  | 8e9e05c52164694d |  3.5.12 |  30 KB  |      true |
-# | 10.0.0.2:2379  | 91bc3c398fb3c146 |  3.5.12 |  30 KB  |     false |
-# | 10.0.0.3:2379  | fd422379fda50e85 |  3.5.12 |  30 KB  |     false |
+# | 192.168.56.11:2379  | 8e9e05c52164694d |  3.5.12 |  30 KB  |      true |
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  3.5.12 |  30 KB  |     false |
+# | 192.168.56.13:2379  | fd422379fda50e85 |  3.5.12 |  30 KB  |     false |
 # +----------------+------------------+---------+---------+-----------+
 
 etcdctl endpoint health
@@ -164,60 +164,60 @@ etcdctl get --prefix /app/
 ## Bước 8: Mô phỏng quorum loss — kill 2 node
 
 ```bash
-# Kill etcd-2 và etcd-3
-# Trên etcd-2:
+# Kill controlplane02 và controlplane03
+# Trên controlplane02:
 sudo systemctl stop etcd
 
-# Trên etcd-3:
+# Trên controlplane03:
 sudo systemctl stop etcd
 
-# Từ etcd-1:
-etcdctl endpoint health --endpoints=https://10.0.0.1:2379
-# https://10.0.0.1:2379 is unhealthy: failed to commit proposal
+# Từ controlplane01:
+etcdctl endpoint health --endpoints=https://192.168.56.11:2379
+# https://192.168.56.11:2379 is unhealthy: failed to commit proposal
 
 # Write fail — quorum lost (1 < 2)
 etcdctl put /test "quorum-lost"
 # Error: etcdserver: request timed out
 ```
 
-**Kiểm tra**: etcd-1 unhealthy, write fail (quorum lost).
+**Kiểm tra**: controlplane01 unhealthy, write fail (quorum lost).
 
 ## Bước 9: Restore toàn cluster từ snapshot
 
 ```bash
-# Trên etcd-1:
+# Trên controlplane01:
 sudo systemctl stop etcd
 sudo rm -rf /var/lib/etcd
 
 # Restore từ snapshot
 etcdctl snapshot restore /tmp/etcd-backup.db \
-  --name=etcd-1 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.1:2380 \
+  --name=controlplane01 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.11:2380 \
   --initial-cluster-token=etcd-cluster-2026 \
   --data-dir=/var/lib/etcd
 
-# Restore trên etcd-2 (copy snapshot sang etcd-2 trước)
-scp /tmp/etcd-backup.db 10.0.0.2:/tmp/
-# Trên etcd-2:
+# Restore trên controlplane02 (copy snapshot sang controlplane02 trước)
+scp /tmp/etcd-backup.db controlplane02:/tmp/
+# Trên controlplane02:
 sudo systemctl stop etcd
 sudo rm -rf /var/lib/etcd
 etcdctl snapshot restore /tmp/etcd-backup.db \
-  --name=etcd-2 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.2:2380 \
+  --name=controlplane02 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.12:2380 \
   --initial-cluster-token=etcd-cluster-2026 \
   --data-dir=/var/lib/etcd
 
-# Restore trên etcd-3
-scp /tmp/etcd-backup.db 10.0.0.3:/tmp/
-# Trên etcd-3:
+# Restore trên controlplane03
+scp /tmp/etcd-backup.db controlplane03:/tmp/
+# Trên controlplane03:
 sudo systemctl stop etcd
 sudo rm -rf /var/lib/etcd
 etcdctl snapshot restore /tmp/etcd-backup.db \
-  --name=etcd-3 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.3:2380 \
+  --name=controlplane03 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.13:2380 \
   --initial-cluster-token=etcd-cluster-2026 \
   --data-dir=/var/lib/etcd
 

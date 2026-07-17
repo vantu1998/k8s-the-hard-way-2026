@@ -14,7 +14,7 @@
 
 ```bash
 export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=https://10.0.0.1:2379,https://10.0.0.2:2379,https://10.0.0.3:2379
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
 export ETCDCTL_CACERT=/etc/etcd/etcd-ca.pem
 export ETCDCTL_CERT=/etc/etcd/etcd-server.pem
 export ETCDCTL_KEY=/etc/etcd/etcd-server-key.pem
@@ -195,12 +195,12 @@ etcdctl watch --prefix /registry/ --rev=10
 ```bash
 # Health check tất cả endpoint
 etcdctl endpoint health
-# https://10.0.0.1:2379 is healthy: successfully committed proposal
-# https://10.0.0.2:2379 is healthy: successfully committed proposal
-# https://10.0.0.3:2379 is healthy: successfully committed proposal
+# https://192.168.56.11:2379 is healthy: successfully committed proposal
+# https://192.168.56.12:2379 is healthy: successfully committed proposal
+# https://192.168.56.13:2379 is healthy: successfully committed proposal
 
 # Health check 1 endpoint
-etcdctl endpoint health --endpoints=https://10.0.0.1:2379
+etcdctl endpoint health --endpoints=https://192.168.56.11:2379
 ```
 
 ## Bước 9: Endpoint status
@@ -211,9 +211,9 @@ etcdctl endpoint status --write-out=table
 # +----------------+------------------+---------+---------+-----------+------------+
 # |    ENDPOINT    |        ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER |
 # +----------------+------------------+---------+---------+-----------+------------+
-# | 10.0.0.1:2379  | 8e9e05c52164694d |  3.5.12 |  25 KB  |      true |      false |
-# | 10.0.0.2:2379  | 91bc3c398fb3c146 |  3.5.12 |  25 KB  |     false |      false |
-# | 10.0.0.3:2379  | fd422379fda50e85 |  3.5.12 |  25 KB  |     false |      false |
+# | 192.168.56.11:2379  | 8e9e05c52164694d |  3.5.12 |  25 KB  |      true |      false |
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  3.5.12 |  25 KB  |     false |      false |
+# | 192.168.56.13:2379  | fd422379fda50e85 |  3.5.12 |  25 KB  |     false |      false |
 # +----------------+------------------+---------+---------+-----------+------------+
 
 # JSON output

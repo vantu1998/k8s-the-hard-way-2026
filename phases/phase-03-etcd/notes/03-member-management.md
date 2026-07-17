@@ -13,9 +13,9 @@ etcdctl member list --write-out=table
 # +------------------+---------+-------+------------------------+------------------------+
 # |        ID        | STATUS  | NAME  |       PEER ADDRS       |      CLIENT ADDRS      |
 # +------------------+---------+-------+------------------------+------------------------+
-# | 8e9e05c52164694d | started |etcd-1 | https://10.0.0.1:2380  | https://10.0.0.1:2379  |
-# | 91bc3c398fb3c146 | started |etcd-2 | https://10.0.0.2:2380  | https://10.0.0.2:2379  |
-# | fd422379fda50e85 | started |etcd-3 | https://10.0.0.3:2380  | https://10.0.0.3:2379  |
+# | 8e9e05c52164694d | started |controlplane01 | https://192.168.56.11:2380  | https://192.168.56.11:2379  |
+# | 91bc3c398fb3c146 | started |controlplane02 | https://192.168.56.12:2380  | https://192.168.56.12:2379  |
+# | fd422379fda50e85 | started |controlplane03 | https://192.168.56.13:2380  | https://192.168.56.13:2379  |
 # +------------------+---------+-------+------------------------+------------------------+
 ```
 
@@ -24,15 +24,15 @@ etcdctl member list --write-out=table
 ### Bước 1: Inform cluster về member mới
 
 ```bash
-etcdctl member add etcd-4 \
-  --peer-urls=https://10.0.0.4:2380
+etcdctl member add controlplane04 \
+  --peer-urls=https://192.168.56.24:2380
 
 # Output:
 # Member 7b8a... added to cluster 3a2b...
 #
-# ETCD_NAME="etcd-4"
-# ETCD_INITIAL_CLUSTER="etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380,etcd-4=https://10.0.0.4:2380"
-# ETCD_INITIAL_ADVERTISE_PEER_URLS="https://10.0.0.4:2380"
+# ETCD_NAME="controlplane04"
+# ETCD_INITIAL_CLUSTER="controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380,controlplane04=https://192.168.56.24:2380"
+# ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.56.24:2380"
 # ETCD_INITIAL_CLUSTER_STATE="existing"
 ```
 
@@ -46,9 +46,9 @@ etcd \
   --data-dir=/var/lib/etcd \
   --listen-peer-urls=https://0.0.0.0:2380 \
   --listen-client-urls=https://0.0.0.0:2379 \
-  --initial-advertise-peer-urls=https://10.0.0.4:2380 \
-  --advertise-client-urls=https://10.0.0.4:2379 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380,etcd-4=https://10.0.0.4:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.24:2380 \
+  --advertise-client-urls=https://192.168.56.24:2379 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380,controlplane04=https://192.168.56.24:2380 \
   --initial-cluster-state=existing \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
@@ -85,9 +85,9 @@ etcdctl member list --write-out=table
 
 ```bash
 etcdctl member list
-# 8e9e05c52164694d, started, etcd-1, https://10.0.0.1:2380, https://10.0.0.1:2379
-# 91bc3c398fb3c146, started, etcd-2, https://10.0.0.2:2380, https://10.0.0.2:2379
-# fd422379fda50e85, started, etcd-3, https://10.0.0.3:2380, https://10.0.0.3:2379
+# 8e9e05c52164694d, started, controlplane01, https://192.168.56.11:2380, https://192.168.56.11:2379
+# 91bc3c398fb3c146, started, controlplane02, https://192.168.56.12:2380, https://192.168.56.12:2379
+# fd422379fda50e85, started, controlplane03, https://192.168.56.13:2380, https://192.168.56.13:2379
 ```
 
 ### Bước 2: Remove
@@ -121,8 +121,8 @@ etcd 3.4+ hỗ trợ **learner** — member mới join như learner (không tín
 
 ```bash
 # Add as learner
-etcdctl member add etcd-4 \
-  --peer-urls=https://10.0.0.4:2380 \
+etcdctl member add controlplane04 \
+  --peer-urls=https://192.168.56.24:2380 \
   --learner=true
 
 # etcd-4 start, sync data, không ảnh hưởng quorum
@@ -147,7 +147,7 @@ etcdctl member promote <member-id>
 ### Đổi peer URL
 
 ```bash
-etcdctl member update <member-id> --peer-urls=https://10.0.0.1:2381
+etcdctl member update <member-id> --peer-urls=https://192.168.56.11:2381
 ```
 
 ### Đổi client URL
@@ -159,15 +159,15 @@ Client URL không cần update qua `etcdctl` — chỉ cần restart etcd với 
 ### Mở rộng cluster 3 → 5
 
 ```bash
-# 1. Add etcd-4 (chỉ 1 lúc)
-etcdctl member add etcd-4 --peer-urls=https://10.0.0.4:2380
-# Start etcd-4 với --initial-cluster-state=existing
-# Wait: etcdctl member list → etcd-4 = started
+# 1. Add controlplane04 (chỉ 1 lúc)
+etcdctl member add controlplane04 --peer-urls=https://192.168.56.24:2380
+# Start controlplane04 với --initial-cluster-state=existing
+# Wait: etcdctl member list → controlplane04 = started
 
-# 2. Add etcd-5 (sau khi etcd-4 đã sync)
-etcdctl member add etcd-5 --peer-urls=https://10.0.0.5:2380
-# Start etcd-5 với --initial-cluster-state=existing
-# Wait: etcdctl member list → etcd-5 = started
+# 2. Add controlplane05 (sau khi controlplane04 đã sync)
+etcdctl member add controlplane05 --peer-urls=https://192.168.56.25:2380
+# Start controlplane05 với --initial-cluster-state=existing
+# Wait: etcdctl member list → controlplane05 = started
 
 # 3. Verify quorum = 3/5
 etcdctl endpoint status --write-out=table

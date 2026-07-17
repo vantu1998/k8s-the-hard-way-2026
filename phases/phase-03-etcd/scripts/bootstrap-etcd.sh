@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Bootstrap etcd cluster 3 node with mTLS
 # Usage: ./bootstrap-etcd.sh <node-name> <node-ip> <etcd-1-ip> <etcd-2-ip> <etcd-3-ip> [cert-dir]
-# Example: ./bootstrap-etcd.sh etcd-1 10.0.0.1 10.0.0.1 10.0.0.2 10.0.0.3 /etc/etcd
+# Example: ./bootstrap-etcd.sh controlplane01 192.168.56.11 192.168.56.11 192.168.56.12 192.168.56.13 /etc/etcd
 
 NODE_NAME="${1:?Usage: $0 <node-name> <node-ip> <etcd-1-ip> <etcd-2-ip> <etcd-3-ip> [cert-dir]}"
 NODE_IP="${2:?Missing node-ip}"

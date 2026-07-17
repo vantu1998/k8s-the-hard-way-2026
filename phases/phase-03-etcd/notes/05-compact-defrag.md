@@ -130,13 +130,13 @@ Defrag **block** etcd node — node đang defrag không nhận request. Trong cl
 
 ```bash
 # Defrag từng node — không ảnh hưởng cluster
-etcdctl defrag --endpoints=https://10.0.0.1:2379
+etcdctl defrag --endpoints=https://192.168.56.11:2379
 # Wait for completion
 
-etcdctl defrag --endpoints=https://10.0.0.2:2379
+etcdctl defrag --endpoints=https://192.168.56.12:2379
 # Wait for completion
 
-etcdctl defrag --endpoints=https://10.0.0.3:2379
+etcdctl defrag --endpoints=https://192.168.56.13:2379
 # Wait for completion
 
 # Hoặc defrag tất cả (etcdctl sẽ làm từng cái):
@@ -181,9 +181,9 @@ du -sh /var/lib/etcd/member/snap/db
 +----------+----------+---------+---------+
 | ENDPOINT | REVISION | DB SIZE | IS LEADER|
 +----------+----------+---------+---------+
-| 10.0.0.1 |  123456  |  500 MB |   true  |
-| 10.0.0.2 |  123456  |  500 MB |  false  |
-| 10.0.0.3 |  123456  |  500 MB |  false  |
+| 192.168.56.11 |  123456  |  500 MB |   true  |
+| 192.168.56.12 |  123456  |  500 MB |  false  |
+| 192.168.56.13 |  123456  |  500 MB |  false  |
 +----------+----------+---------+---------+
 500M  /var/lib/etcd/member/snap/db
 
@@ -196,9 +196,9 @@ Defragmenting...
 +----------+----------+---------+---------+
 | ENDPOINT | REVISION | DB SIZE | IS LEADER|
 +----------+----------+---------+---------+
-| 10.0.0.1 |  123456  |  150 MB |   true  |
-| 10.0.0.2 |  123456  |  150 MB |  false  |
-| 10.0.0.3 |  123456  |  150 MB |  false  |
+| 192.168.56.11 |  123456  |  150 MB |   true  |
+| 192.168.56.12 |  123456  |  150 MB |  false  |
+| 192.168.56.13 |  123456  |  150 MB |  false  |
 +----------+----------+---------+---------+
 150M  /var/lib/etcd/member/snap/db
 ```

@@ -5,9 +5,9 @@ set -euo pipefail
 # Usage: ./gen-apiserver-cert.sh [cert_dir] [master1_ip] [master2_ip] [master3_ip] [service_ip]
 
 CERT_DIR="${1:-./certs}"
-MASTER1_IP="${2:-10.0.0.1}"
-MASTER2_IP="${3:-10.0.0.2}"
-MASTER3_IP="${4:-10.0.0.3}"
+MASTER1_IP="${2:-192.168.56.11}"
+MASTER2_IP="${3:-192.168.56.12}"
+MASTER3_IP="${4:-192.168.56.13}"
 SERVICE_IP="${5:-10.96.0.1}"
 DNS_DOMAIN="cluster.local"
 

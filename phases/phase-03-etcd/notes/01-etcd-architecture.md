@@ -80,7 +80,7 @@ etcdctl        ──► etcd:2379 (client URL)
 ```bash
 # Ví dụ:
 --listen-client-urls=https://0.0.0.0:2379
---advertise-client-urls=https://10.0.0.1:2379
+--advertise-client-urls=https://192.168.56.11:2379
 ```
 
 ### 2. Peer URL (`--listen-peer-urls`, `--initial-advertise-peer-urls`)
@@ -99,7 +99,7 @@ etcd-2 ◄──► etcd-3  (peer URL, port 2380)
 ```bash
 # Ví dụ:
 --listen-peer-urls=https://0.0.0.0:2380
---initial-advertise-peer-urls=https://10.0.0.1:2380
+--initial-advertise-peer-urls=https://192.168.56.11:2380
 ```
 
 ### Tóm tắt URL config
@@ -172,7 +172,7 @@ sudo apt-get install -y etcd-server etcd-client
 
 ```bash
 etcdctl \
-  --endpoints=https://10.0.0.1:2379 \
+  --endpoints=https://192.168.56.11:2379 \
   --cacert=etcd-ca.pem \
   --cert=etcd-client.pem \
   --key=etcd-client-key.pem \
@@ -214,7 +214,7 @@ Thay vì truyền flags mỗi lần, dùng env vars:
 
 ```bash
 export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=https://10.0.0.1:2379
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379
 export ETCDCTL_CACERT=etcd-ca.pem
 export ETCDCTL_CERT=etcd-client.pem
 export ETCDCTL_KEY=etcd-client-key.pem
@@ -318,16 +318,16 @@ spec:
   - name: etcd
     command:
     - etcd
-    - --advertise-client-urls=https://10.0.0.1:2379
+    - --advertise-client-urls=https://192.168.56.11:2379
     - --cert-file=/etc/kubernetes/pki/etcd/server.crt
     - --client-cert-auth=true
     - --data-dir=/var/lib/etcd
-    - --initial-advertise-peer-urls=https://10.0.0.1:2380
-    - --initial-cluster=master1=https://10.0.0.1:2380
+    - --initial-advertise-peer-urls=https://192.168.56.11:2380
+    - --initial-cluster=controlplane01=https://192.168.56.11:2380
     - --key-file=/etc/kubernetes/pki/etcd/server.key
-    - --listen-client-urls=https://127.0.0.1:2379,https://10.0.0.1:2379
-    - --listen-peer-urls=https://10.0.0.1:2380
-    - --name=master1
+    - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.11:2379
+    - --listen-peer-urls=https://192.168.56.11:2380
+    - --name=controlplane01
     - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
     - --peer-client-cert-auth=true
     - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
@@ -362,13 +362,13 @@ After=network.target
 [Service]
 Type=notify
 ExecStart=/usr/local/bin/etcd \
-  --name=etcd-1 \
+  --name=controlplane01 \
   --data-dir=/var/lib/etcd \
   --listen-client-urls=https://0.0.0.0:2379 \
-  --advertise-client-urls=https://10.0.0.1:2379 \
+  --advertise-client-urls=https://192.168.56.11:2379 \
   --listen-peer-urls=https://0.0.0.0:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.1:2380 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.11:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
   --initial-cluster-state=new \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \

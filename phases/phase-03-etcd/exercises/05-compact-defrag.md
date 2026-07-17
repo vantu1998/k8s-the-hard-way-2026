@@ -14,7 +14,7 @@ etcd giữ history (MVCC) — data dir phình to theo thời gian. Compact xóa 
 
 ```bash
 export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=https://10.0.0.1:2379,https://10.0.0.2:2379,https://10.0.0.3:2379
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
 export ETCDCTL_CACERT=/etc/etcd/etcd-ca.pem
 export ETCDCTL_CERT=/etc/etcd/etcd-server.pem
 export ETCDCTL_KEY=/etc/etcd/etcd-server-key.pem
@@ -43,9 +43,9 @@ etcdctl endpoint status --write-out=table
 # +----------------+----------+---------+---------+
 # |    ENDPOINT    | REVISION | DB SIZE | IS LEADER|
 # +----------------+----------+---------+---------+
-# | 10.0.0.1:2379  |   5003   |  2.5 MB |   true  |
-# | 10.0.0.2:2379  |   5003   |  2.5 MB |  false  |
-# | 10.0.0.3:2379  |   5003   |  2.5 MB |  false  |
+# | 192.168.56.11:2379  |   5003   |  2.5 MB |   true  |
+# | 192.168.56.12:2379  |   5003   |  2.5 MB |  false  |
+# | 192.168.56.13:2379  |   5003   |  2.5 MB |  false  |
 # +----------------+----------+---------+---------+
 
 # Disk usage thực tế
@@ -111,14 +111,14 @@ sudo du -sh /var/lib/etcd/member/snap/db
 
 ```bash
 # Defrag từng node (an toàn — không ảnh hưởng cluster)
-etcdctl defrag --endpoints=https://10.0.0.1:2379
-# Finished defragmenting etcd(https://10.0.0.1:2379)
+etcdctl defrag --endpoints=https://192.168.56.11:2379
+# Finished defragmenting etcd(https://192.168.56.11:2379)
 
-etcdctl defrag --endpoints=https://10.0.0.2:2379
-# Finished defragmenting etcd(https://10.0.0.2:2379)
+etcdctl defrag --endpoints=https://192.168.56.12:2379
+# Finished defragmenting etcd(https://192.168.56.12:2379)
 
-etcdctl defrag --endpoints=https://10.0.0.3:2379
-# Finished defragmenting etcd(https://10.0.0.3:2379)
+etcdctl defrag --endpoints=https://192.168.56.13:2379
+# Finished defragmenting etcd(https://192.168.56.13:2379)
 
 # Hoặc defrag tất cả (etcdctl làm tuần tự)
 # etcdctl defrag --cluster
@@ -131,9 +131,9 @@ etcdctl endpoint status --write-out=table
 # +----------------+----------+---------+---------+
 # |    ENDPOINT    | REVISION | DB SIZE | IS LEADER|
 # +----------------+----------+---------+---------+
-# | 10.0.0.1:2379  |   5003   |  300 KB |   true  |
-# | 10.0.0.2:2379  |   5003   |  300 KB |  false  |
-# | 10.0.0.3:2379  |   5003   |  300 KB |  false  |
+# | 192.168.56.11:2379  |   5003   |  300 KB |   true  |
+# | 192.168.56.12:2379  |   5003   |  300 KB |  false  |
+# | 192.168.56.13:2379  |   5003   |  300 KB |  false  |
 # +----------------+----------+---------+---------+
 
 sudo du -sh /var/lib/etcd/member/snap/db

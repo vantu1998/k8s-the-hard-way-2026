@@ -14,7 +14,7 @@ Raft leader election là cơ chế tự recover của etcd. Bài này mô phỏn
 
 ```bash
 export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=https://10.0.0.1:2379,https://10.0.0.2:2379,https://10.0.0.3:2379
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
 export ETCDCTL_CACERT=/etc/etcd/etcd-ca.pem
 export ETCDCTL_CERT=/etc/etcd/etcd-server.pem
 export ETCDCTL_KEY=/etc/etcd/etcd-server-key.pem
@@ -27,13 +27,13 @@ etcdctl endpoint status --write-out=table
 # +----------------+------------------+---------+-----------+
 # |    ENDPOINT    |        ID        | DB SIZE | IS LEADER |
 # +----------------+------------------+---------+-----------+
-# | 10.0.0.1:2379  | 8e9e05c52164694d |  30 KB  |      true |  ← LEADER
-# | 10.0.0.2:2379  | 91bc3c398fb3c146 |  30 KB  |     false |
-# | 10.0.0.3:2379  | fd422379fda50e85 |  30 KB  |     false |
+# | 192.168.56.11:2379  | 8e9e05c52164694d |  30 KB  |      true |  ← LEADER
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  30 KB  |     false |
+# | 192.168.56.13:2379  | fd422379fda50e85 |  30 KB  |     false |
 # +----------------+------------------+---------+-----------+
 ```
 
-**Ghi lại**: Node nào là leader (trong ví dụ: etcd-1 / 10.0.0.1).
+**Ghi lại**: Node nào là leader (trong ví dụ: controlplane01 / 192.168.56.11).
 
 ## Bước 3: Ghi data trước khi kill leader
 
@@ -43,7 +43,7 @@ etcdctl put /pre-election "data-before-crash"
 
 # Lấy revision hiện tại
 REV_BEFORE=$(etcdctl endpoint status --write-out=json \
-  --endpoints=https://10.0.0.1:2379 | jq -r '.[0].Status.header.revision')
+  --endpoints=https://192.168.56.11:2379 | jq -r '.[0].Status.header.revision')
 echo "Revision before: ${REV_BEFORE}"
 ```
 
@@ -57,7 +57,7 @@ etcdctl watch --prefix /
 ## Bước 5: Kill leader
 
 ```bash
-# Trên etcd-1 (leader):
+# Trên controlplane01 (leader):
 sudo systemctl stop etcd
 
 # Hoặc kill process:
@@ -67,41 +67,41 @@ sudo systemctl stop etcd
 ## Bước 6: Quan sát election — nhanh!
 
 ```bash
-# Từ etcd-2 hoặc etcd-3 (trong ~1-2 giây):
+# Từ controlplane02 hoặc controlplane03 (trong ~1-2 giây):
 etcdctl endpoint status --write-out=table \
-  --endpoints=https://10.0.0.2:2379,https://10.0.0.3:2379
+  --endpoints=https://192.168.56.12:2379,https://192.168.56.13:2379
 # +----------------+------------------+---------+-----------+
 # |    ENDPOINT    |        ID        | DB SIZE | IS LEADER |
 # +----------------+------------------+---------+-----------+
-# | 10.0.0.2:2379  | 91bc3c398fb3c146 |  30 KB  |     false |  ← đang elect
-# | 10.0.0.3:2379  | fd422379fda50e85 |  30 KB  |      true |  ← NEW LEADER!
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  30 KB  |     false |  ← đang elect
+# | 192.168.56.13:2379  | fd422379fda50e85 |  30 KB  |      true |  ← NEW LEADER!
 # +----------------+------------------+---------+-----------+
 ```
 
 > Election diễn ra trong ~1 giây (`election-timeout=1000ms`). Có thể cần chạy lệnh nhiều lần để bắt kịp.
 
-**Kiểm tra**: Leader mới được elect (etcd-2 hoặc etcd-3).
+**Kiểm tra**: Leader mới được elect (controlplane02 hoặc controlplane03).
 
 ## Bước 7: Verify cluster vẫn hoạt động (2/3 node)
 
 ```bash
 # Health check
 etcdctl endpoint health \
-  --endpoints=https://10.0.0.2:2379,https://10.0.0.3:2379
+  --endpoints=https://192.168.56.12:2379,https://192.168.56.13:2379
 # Cả 2 healthy
 
 # Write vẫn hoạt động
 etcdctl put /post-election "data-after-crash" \
-  --endpoints=https://10.0.0.3:2379
+  --endpoints=https://192.168.56.13:2379
 # OK
 
 # Read
 etcdctl get /pre-election \
-  --endpoints=https://10.0.0.3:2379
+  --endpoints=https://192.168.56.13:2379
 # data-before-crash  ← data cũ vẫn còn (Raft replication)
 
 etcdctl get /post-election \
-  --endpoints=https://10.0.0.3:2379
+  --endpoints=https://192.168.56.13:2379
 # data-after-crash
 ```
 
@@ -110,7 +110,7 @@ etcdctl get /post-election \
 ## Bước 8: Xem election log
 
 ```bash
-# Trên etcd-2 hoặc etcd-3:
+# Trên controlplane02 hoặc controlplane03:
 sudo journalctl -u etcd --no-pager | grep -E "(election|leader|term)" | tail -20
 
 # Output ví dụ:
@@ -131,42 +131,42 @@ sudo journalctl -u etcd --no-pager | grep -E "(election|leader|term)" | tail -20
 | `became leader at term 2` | Đủ quorum vote, trở thành leader |
 | `published local member` | Leader thông báo cho cluster |
 
-## Bước 9: Restart etcd-1 (cũ leader)
+## Bước 9: Restart controlplane01 (cũ leader)
 
 ```bash
-# Trên etcd-1:
+# Trên controlplane01:
 sudo systemctl start etcd
 
 # Đợi vài giây
 sleep 3
 
-# Kiểm tra — etcd-1 rejoin as follower
+# Kiểm tra — controlplane01 rejoin as follower
 etcdctl endpoint status --write-out=table
 # +----------------+------------------+---------+-----------+
 # |    ENDPOINT    |        ID        | DB SIZE | IS LEADER |
 # +----------------+------------------+---------+-----------+
-# | 10.0.0.1:2379  | 8e9e05c52164694d |  30 KB  |     false |  ← follower (rejoined)
-# | 10.0.0.2:2379  | 91bc3c398fb3c146 |  30 KB  |     false |
-# | 10.0.0.3:2379  | fd422379fda50e85 |  30 KB  |      true |  ← vẫn leader
+# | 192.168.56.11:2379  | 8e9e05c52164694d |  30 KB  |     false |  ← follower (rejoined)
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  30 KB  |     false |
+# | 192.168.56.13:2379  | fd422379fda50e85 |  30 KB  |      true |  ← vẫn leader
 # +----------------+------------------+---------+-----------+
 ```
 
-**Kiểm tra**: etcd-1 rejoin cluster as follower. Leader không đổi (etcd-3 vẫn leader).
+**Kiểm tra**: controlplane01 rejoin cluster as follower. Leader không đổi (controlplane03 vẫn leader).
 
 > **Quan trọng**: Cũ leader rejoin as **follower**, không lấy lại leadership. Leader chỉ đổi khi current leader crash. Điều này tránh unnecessary election.
 
-## Bước 10: Verify data đầy đủ trên etcd-1
+## Bước 10: Verify data đầy đủ trên controlplane01
 
 ```bash
-# etcd-1 đã sync data từ leader
-etcdctl get /pre-election --endpoints=https://10.0.0.1:2379
+# controlplane01 đã sync data từ leader
+etcdctl get /pre-election --endpoints=https://192.168.56.11:2379
 # data-before-crash
 
-etcdctl get /post-election --endpoints=https://10.0.0.1:2379
+etcdctl get /post-election --endpoints=https://192.168.56.11:2379
 # data-after-crash
 ```
 
-**Kiểm tra**: etcd-1 có đầy đủ data (Raft sync sau rejoin).
+**Kiểm tra**: controlplane01 có đầy đủ data (Raft sync sau rejoin).
 
 ## Bước 11: Đo election time
 
@@ -179,7 +179,7 @@ sudo systemctl stop etcd
 # 2. Poll cho đến khi leader mới
 while true; do
   LEADER=$(etcdctl endpoint status --write-out=json \
-    --endpoints=https://10.0.0.2:2379,https://10.0.0.3:2379 2>/dev/null \
+    --endpoints=https://192.168.56.12:2379,https://192.168.56.13:2379 2>/dev/null \
     | jq -r '.[] | select(.Status.header.leader == .Status.header.member_id) | .Endpoint' 2>/dev/null)
   if [ -n "${LEADER}" ]; then
     AFTER=$(date +%s%N)
@@ -199,18 +199,18 @@ done
 ## Bước 12: Test multiple leader changes
 
 ```bash
-# Kill current leader (etcd-3)
-sudo systemctl stop etcd  # trên etcd-3
+# Kill current leader (controlplane03)
+sudo systemctl stop etcd  # trên controlplane03
 
 # Wait for new election
 sleep 2
 
 # Check new leader
 etcdctl endpoint status --write-out=table \
-  --endpoints=https://10.0.0.1:2379,https://10.0.0.2:2379
+  --endpoints=https://192.168.56.11:2379,https://192.168.56.12:2379
 
-# Restart etcd-3
-sudo systemctl start etcd  # trên etcd-3
+# Restart controlplane03
+sudo systemctl start etcd  # trên controlplane03
 
 # Kill new leader
 # ... lặp lại

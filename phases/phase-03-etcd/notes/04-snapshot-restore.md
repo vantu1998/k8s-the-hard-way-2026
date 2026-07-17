@@ -38,7 +38,7 @@ etcdctl snapshot save /backup/etcd-snapshot.db
 
 ```bash
 etcdctl \
-  --endpoints=https://10.0.0.1:2379 \
+  --endpoints=https://192.168.56.11:2379 \
   --cacert=/etc/etcd/etcd-ca.pem \
   --cert=/etc/etcd/etcd-client.pem \
   --key=/etc/etcd/etcd-client-key.pem \
@@ -50,7 +50,7 @@ etcdctl \
 ```bash
 # Snapshot từ leader (đảm bảo data mới nhất)
 etcdctl \
-  --endpoints=https://10.0.0.1:2379 \
+  --endpoints=https://192.168.56.11:2379 \
   --cacert=/etc/etcd/etcd-ca.pem \
   --cert=/etc/etcd/etcd-client.pem \
   --key=/etc/etcd/etcd-client-key.pem \
@@ -98,9 +98,9 @@ sudo rm -rf /var/lib/etcd
 
 # 3. Restore từ snapshot
 etcdctl snapshot restore /backup/etcd-snapshot.db \
-  --name=etcd-1 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.1:2380 \
+  --name=controlplane01 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.11:2380 \
   --initial-cluster-token=etcd-cluster \
   --data-dir=/var/lib/etcd
 
@@ -123,25 +123,25 @@ etcdctl snapshot restore /backup/etcd-snapshot.db \
 ### Restore trên tất cả node
 
 ```bash
-# Trên etcd-1:
+# Trên controlplane01:
 etcdctl snapshot restore /backup/etcd-snapshot.db \
-  --name=etcd-1 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.1:2380 \
+  --name=controlplane01 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.11:2380 \
   --data-dir=/var/lib/etcd
 
-# Trên etcd-2:
+# Trên controlplane02:
 etcdctl snapshot restore /backup/etcd-snapshot.db \
-  --name=etcd-2 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.2:2380 \
+  --name=controlplane02 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.12:2380 \
   --data-dir=/var/lib/etcd
 
-# Trên etcd-3:
+# Trên controlplane03:
 etcdctl snapshot restore /backup/etcd-snapshot.db \
-  --name=etcd-3 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.3:2380 \
+  --name=controlplane03 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.13:2380 \
   --data-dir=/var/lib/etcd
 
 # Start etcd trên tất cả node
@@ -164,16 +164,16 @@ sudo rm -rf /var/lib/etcd
 
 # 3. Restore snapshot
 etcdctl snapshot restore /backup/etcd-snapshot.db \
-  --name=etcd-3 \
-  --initial-cluster=etcd-1=https://10.0.0.1:2380,etcd-2=https://10.0.0.2:2380,etcd-3=https://10.0.0.3:2380 \
-  --initial-advertise-peer-urls=https://10.0.0.3:2380 \
+  --name=controlplane03 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-advertise-peer-urls=https://192.168.56.13:2380 \
   --data-dir=/var/lib/etcd
 
 # 4. Start etcd với --initial-cluster-state=existing
 sudo systemctl start etcd
 
 # 5. Re-add member nếu cần
-etcdctl member add etcd-3 --peer-urls=https://10.0.0.3:2380
+etcdctl member add controlplane03 --peer-urls=https://192.168.56.13:2380
 ```
 
 ## Backup strategy cho Kubernetes

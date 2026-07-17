@@ -302,9 +302,9 @@ etcdctl endpoint status --write-out=table
 # +----------------+------------------+---------+---------+-----------+------------+
 # |    ENDPOINT    |        ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER |
 # +----------------+------------------+---------+---------+-----------+------------+
-# | 10.0.0.1:2379  | 8e9e05c52164694d |  3.5.12 |  100 KB |      true |      false |
-# | 10.0.0.2:2379  | 91bc3c398fb3c146 |  3.5.12 |  100 KB |     false |      false |
-# | 10.0.0.3:2379  | fd422379fda50e85 |  3.5.12 |  100 KB |     false |      false |
+# | 192.168.56.11:2379  | 8e9e05c52164694d |  3.5.12 |  100 KB |      true |      false |
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  3.5.12 |  100 KB |     false |      false |
+# | 192.168.56.13:2379  | fd422379fda50e85 |  3.5.12 |  100 KB |     false |      false |
 # +----------------+------------------+---------+---------+-----------+------------+
 ```
 
@@ -326,7 +326,7 @@ etcdctl endpoint status --write-out=table
 
 ```bash
 # etcd expose Prometheus metric tại /metrics
-curl -s https://10.0.0.1:2379/metrics --cert etcd-client.pem --key etcd-client-key.pem --cacert etcd-ca.pem \
+curl -s https://192.168.56.11:2379/metrics --cert etcd-client.pem --key etcd-client-key.pem --cacert etcd-ca.pem \
   | grep raft
 
 # etcd_server_leader_changes_seen_total — số lần leader change
