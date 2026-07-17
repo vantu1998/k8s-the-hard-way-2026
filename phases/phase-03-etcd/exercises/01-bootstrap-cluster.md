@@ -113,7 +113,9 @@ Trên **mỗi node**:
 sudo mkdir -p /var/lib/etcd
 ```
 
-## Bước 4: Tạo systemd unit file
+## Bước 4: Bootstrap controlplane01 (node đầu tiên)
+
+Giống kubeadm — bootstrap từng node một. Node đầu tiên start như single-node cluster, các node sau join qua `etcdctl member add`.
 
 Trên **controlplane01**:
 
@@ -134,7 +136,7 @@ ExecStart=/usr/local/bin/etcd \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.11:2380 \
   --advertise-client-urls=https://192.168.56.11:2379 \
-  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380 \
   --initial-cluster-state=new \
   --initial-cluster-token=etcd-cluster-2026 \
   --client-cert-auth=true \
@@ -159,23 +161,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-Trên **controlplane02** — đổi:
-- `--name=controlplane02`
-- `--listen-peer-urls=https://192.168.56.12:2380`
-- `--listen-client-urls=https://127.0.0.1:2379,https://192.168.56.12:2379`
-- `--initial-advertise-peer-urls=https://192.168.56.12:2380`
-- `--advertise-client-urls=https://192.168.56.12:2379`
-
-Giữ `--initial-cluster` và `--listen-metrics-urls` giống nhau.
-
-Trên **controlplane03** — đổi:
-- `--name=controlplane03`
-- `--listen-peer-urls=https://192.168.56.13:2380`
-- `--listen-client-urls=https://127.0.0.1:2379,https://192.168.56.13:2379`
-- `--initial-advertise-peer-urls=https://192.168.56.13:2380`
-- `--advertise-client-urls=https://192.168.56.13:2379`
-
-Giữ `--initial-cluster` và `--listen-metrics-urls` giống nhau.
+> **Lưu ý**: `--initial-cluster` chỉ chứa `controlplane01` — giống kubeadm, node đầu tiên bootstrap như single-node cluster. Các node sau sẽ join qua `etcdctl member add`.
 
 ### Giải thích flags quan trọng
 
@@ -185,19 +171,18 @@ Giữ `--initial-cluster` và `--listen-metrics-urls` giống nhau.
 | `--listen-peer-urls` | Bind peer listener vào IP cụ thể (không dùng `0.0.0.0` trong prod) |
 | `--listen-client-urls` | Bind client listener vào `127.0.0.1` + IP cụ thể (localhost cho apiserver, IP cho external) |
 | `--listen-metrics-urls` | Metrics endpoint trên port 2381 HTTP (cho Prometheus scrape) |
-| `--initial-cluster-state=new` | Bootstrap cluster mới (không phải join cluster đang chạy) |
-| `--initial-cluster` | Tất cả member + peer URL — phải giống trên mọi node |
-| `--initial-cluster-token` | Unique token — tránh cross-talk giữa cluster |
+| `--initial-cluster-state=new` | Bootstrap cluster mới — chỉ dùng cho node đầu tiên |
+| `--initial-cluster` | Chỉ chứa node này — cluster membership mở rộng qua `etcdctl member add` |
+| `--initial-cluster-token` | Unique token — tránh cross-talk giữa cluster (chỉ node đầu tiên) |
 | `--client-cert-auth=true` | Yêu cầu client trình cert (mTLS) |
 | `--peer-client-cert-auth=true` | Yêu cầu peer trình cert (mTLS giữa etcd nodes) |
 | `--snapshot-count=10000` | Số transaction trước khi tạo snapshot (default 10000) |
 | `--watch-progress-notify-interval=5s` | Notify watcher về progress mỗi 5s |
 | `--feature-gates=InitialCorruptCheck=true` | Kiểm tra data integrity khi start |
 
-## Bước 5: Start etcd trên tất cả node
+## Bước 5: Start controlplane01 + verify single-node
 
 ```bash
-# Trên mỗi node:
 sudo systemctl daemon-reload
 sudo systemctl enable etcd
 sudo systemctl start etcd
@@ -207,19 +192,194 @@ sudo systemctl status etcd
 # active (running)
 ```
 
-**Kiểm tra**: `systemctl status etcd` = active (running) trên cả 3 node.
-
-## Bước 6: Verify cluster health
-
-Từ **bất kỳ node nào**:
+Verify single-node cluster:
 
 ```bash
-# Tạo etcdctl env vars
 export ETCDCTL_API=3
-export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379
 export ETCDCTL_CACERT=/etc/etcd/etcd-ca.pem
 export ETCDCTL_CERT=/etc/etcd/etcd-server.pem
 export ETCDCTL_KEY=/etc/etcd/etcd-server-key.pem
+
+# Health check
+etcdctl endpoint health
+# https://192.168.56.11:2379 is healthy: successfully committed proposal
+
+# Member list — chỉ 1 node
+etcdctl member list --write-out=table
+# +------------------+---------+----------------+------------------------+------------------------+
+# |        ID        | STATUS  |      NAME      |       PEER ADDRS       |      CLIENT ADDRS      |
+# +------------------+---------+----------------+------------------------+------------------------+
+# | 8e9e05c52164694d | started | controlplane01 | https://192.168.56.11:2380 | https://192.168.56.11:2379 |
+# +------------------+---------+----------------+------------------------+------------------------+
+```
+
+**Kiểm tra**: controlplane01 healthy, 1 member trong cluster.
+
+## Bước 6: Add controlplane02 vào cluster
+
+### 6a. Register controlplane02 as member
+
+Trên **controlplane01** (hoặc bất kỳ node nào đã chạy):
+
+```bash
+# etcdctl env vars đã set từ Bước 5
+etcdctl member add controlplane02 \
+  --peer-urls=https://192.168.56.12:2380
+# Member 91bc3c398fb3c146 added to cluster etcd-cluster-2026
+```
+
+> `etcdctl member add` thông báo cho leader về node mới. Leader ghi "add member" vào Raft log, commit, rồi bắt đầu gửi Raft messages đến peer URL của node mới.
+
+### 6b. Create systemd unit cho controlplane02
+
+Trên **controlplane02**:
+
+```bash
+sudo tee /etc/systemd/system/etcd.service > /dev/null << 'EOF'
+[Unit]
+Description=etcd
+After=network.target
+
+[Service]
+Type=notify
+User=root
+ExecStart=/usr/local/bin/etcd \
+  --name=controlplane02 \
+  --data-dir=/var/lib/etcd \
+  --listen-peer-urls=https://192.168.56.12:2380 \
+  --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.12:2379 \
+  --listen-metrics-urls=http://127.0.0.1:2381 \
+  --initial-advertise-peer-urls=https://192.168.56.12:2380 \
+  --advertise-client-urls=https://192.168.56.12:2379 \
+  --initial-cluster=controlplane02=https://192.168.56.12:2380 \
+  --client-cert-auth=true \
+  --trusted-ca-file=/etc/etcd/etcd-ca.pem \
+  --cert-file=/etc/etcd/etcd-server.pem \
+  --key-file=/etc/etcd/etcd-server-key.pem \
+  --peer-client-cert-auth=true \
+  --peer-trusted-ca-file=/etc/etcd/etcd-ca.pem \
+  --peer-cert-file=/etc/etcd/etcd-peer.pem \
+  --peer-key-file=/etc/etcd/etcd-peer-key.pem \
+  --heartbeat-interval=100 \
+  --election-timeout=1000 \
+  --snapshot-count=10000 \
+  --watch-progress-notify-interval=5s \
+  --feature-gates=InitialCorruptCheck=true
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+> **Khác biệt so với node đầu**:
+> - `--initial-cluster` chỉ chứa `controlplane02` (chỉ node này, giống kubeadm)
+> - Không có `--initial-cluster-state` (default `new` — etcd nhận Raft messages từ leader và join cluster)
+> - Không có `--initial-cluster-token` (chỉ cần cho node đầu bootstrap)
+
+### 6c. Start controlplane02
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable etcd
+sudo systemctl start etcd
+
+# Kiểm tra status
+sudo systemctl status etcd
+# active (running)
+```
+
+Verify 2-node cluster (từ controlplane01):
+
+```bash
+etcdctl member list --write-out=table
+# +------------------+---------+----------------+------------------------+------------------------+
+# |        ID        | STATUS  |      NAME      |       PEER ADDRS       |      CLIENT ADDRS      |
+# +------------------+---------+----------------+------------------------+------------------------+
+# | 8e9e05c52164694d | started | controlplane01 | https://192.168.56.11:2380 | https://192.168.56.11:2379 |
+# | 91bc3c398fb3c146 | started | controlplane02 | https://192.168.56.12:2380 | https://192.168.56.12:2379 |
+# +------------------+---------+----------------+------------------------+------------------------+
+```
+
+**Kiểm tra**: 2 member started, cả 2 healthy.
+
+## Bước 7: Add controlplane03 vào cluster
+
+### 7a. Register controlplane03 as member
+
+```bash
+etcdctl member add controlplane03 \
+  --peer-urls=https://192.168.56.13:2380
+# Member fd422379fda50e85 added to cluster etcd-cluster-2026
+```
+
+### 7b. Create systemd unit cho controlplane03
+
+Trên **controlplane03**:
+
+```bash
+sudo tee /etc/systemd/system/etcd.service > /dev/null << 'EOF'
+[Unit]
+Description=etcd
+After=network.target
+
+[Service]
+Type=notify
+User=root
+ExecStart=/usr/local/bin/etcd \
+  --name=controlplane03 \
+  --data-dir=/var/lib/etcd \
+  --listen-peer-urls=https://192.168.56.13:2380 \
+  --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.13:2379 \
+  --listen-metrics-urls=http://127.0.0.1:2381 \
+  --initial-advertise-peer-urls=https://192.168.56.13:2380 \
+  --advertise-client-urls=https://192.168.56.13:2379 \
+  --initial-cluster=controlplane03=https://192.168.56.13:2380 \
+  --client-cert-auth=true \
+  --trusted-ca-file=/etc/etcd/etcd-ca.pem \
+  --cert-file=/etc/etcd/etcd-server.pem \
+  --key-file=/etc/etcd/etcd-server-key.pem \
+  --peer-client-cert-auth=true \
+  --peer-trusted-ca-file=/etc/etcd/etcd-ca.pem \
+  --peer-cert-file=/etc/etcd/etcd-peer.pem \
+  --peer-key-file=/etc/etcd/etcd-peer-key.pem \
+  --heartbeat-interval=100 \
+  --election-timeout=1000 \
+  --snapshot-count=10000 \
+  --watch-progress-notify-interval=5s \
+  --feature-gates=InitialCorruptCheck=true
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+### 7c. Start controlplane03
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable etcd
+sudo systemctl start etcd
+
+# Kiểm tra status
+sudo systemctl status etcd
+# active (running)
+```
+
+**Kiểm tra**: `systemctl status etcd` = active (running) trên controlplane03.
+
+## Bước 8: Verify cluster health (3 node)
+
+Từ **bất kỳ node nào** — cập nhật endpoints để bao gồm tất cả 3 node:
+
+```bash
+export ETCDCTL_ENDPOINTS=https://192.168.56.11:2379,https://192.168.56.12:2379,https://192.168.56.13:2379
 
 # Health check
 etcdctl endpoint health
@@ -250,7 +410,7 @@ etcdctl endpoint status --write-out=table
 
 **Kiểm tra**: 3 endpoint healthy, 3 member started, 1 leader.
 
-## Bước 7: Test write replication
+## Bước 9: Test write replication
 
 ```bash
 # Write trên controlplane01
@@ -267,7 +427,7 @@ etcdctl --endpoints=https://192.168.56.13:2379 get /test
 
 **Kiểm tra**: Data ghi trên 1 node, đọc được trên tất cả node (Raft replication hoạt động).
 
-## Bước 8: Kiểm tra log
+## Bước 10: Kiểm tra log
 
 ```bash
 # Trên controlplane01:
@@ -292,15 +452,15 @@ sudo journalctl -u etcd --no-pager | tail -30
 ## Câu hỏi tự kiểm tra
 
 1. `--listen-client-urls` vs `--advertise-client-urls` khác nhau thế nào?
-2. Tại sao `--initial-cluster` phải giống nhau trên tất cả node?
-3. `--initial-cluster-state=new` vs `existing` — khi nào dùng cái nào?
+2. Tại sao `--initial-cluster` trên controlplane02 chỉ chứa `controlplane02` mà không cần liệt kê tất cả 3 node?
+3. Tại sao controlplane02 không cần `--initial-cluster-state=existing` khi join cluster?
 4. Tại sao cần `--peer-client-cert-auth=true`? Nếu tắt thì có rủi ro gì?
-5. Nếu controlplane01 không start được, làm sao debug?
+5. Nếu controlplane02 không join được sau `etcdctl member add`, làm sao debug?
 
 ## Đáp án tham khảo
 
 1. `--listen-client-urls` = etcd lắng nghe ở interface nào (production: `127.0.0.1` + IP cụ thể, không dùng `0.0.0.0`). `--advertise-client-urls` = URL client dùng để kết nối (IP node). `127.0.0.1` cho phép kube-apiserver trên cùng node kết nối qua localhost — nhanh hơn, không qua network stack.
-2. Vì `--initial-cluster` định nghĩa cluster topology — tất cả node phải đồng ý về topology khi bootstrap.
-3. `new` = bootstrap cluster mới (lần đầu). `existing` = join cluster đang chạy (add member).
+2. Vì `etcdctl member add` đã thông báo cho leader về node mới. `--initial-cluster` chỉ cần đúng để etcd biết "ta là ai" (match `--name`). Cluster membership thật sự đến từ Raft — leader push messages đến peer URL của node mới.
+3. etcd default `--initial-cluster-state=new`. Khi data dir trống và leader đã biết về node mới (qua `member add`), etcd nhận Raft messages từ leader và join cluster. kubeadm cũng không set flag này — rely vào default.
 4. Nếu tắt peer mTLS, bất kỳ ai reach port 2380 có thể join cluster giả mạo. mTLS đảm bảo chỉ etcd node có cert mới kết nối được.
-5. `journalctl -u etcd` xem log. Thường lỗi: cert sai, IP sai trong `--initial-cluster`, port bị firewall block.
+5. `journalctl -u etcd` xem log trên controlplane02. Kiểm tra: cert sai, IP sai trong `--listen-peer-urls`, firewall block port 2380, hoặc `etcdctl member add` chưa được commit trước khi start node mới.

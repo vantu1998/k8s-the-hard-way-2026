@@ -1,19 +1,38 @@
 #!/bin/bash
 set -euo pipefail
 
-# Bootstrap etcd cluster 3 node with mTLS
-# Usage: ./bootstrap-etcd.sh <node-name> <node-ip> <etcd-1-ip> <etcd-2-ip> <etcd-3-ip> [cert-dir]
-# Example: ./bootstrap-etcd.sh controlplane01 192.168.56.11 192.168.56.11 192.168.56.12 192.168.56.13 /etc/etcd
+# Bootstrap etcd cluster with mTLS (kubeadm-style dynamic bootstrap)
+#
+# Usage:
+#   ./bootstrap-etcd.sh init <node-name> <node-ip> [cert-dir]
+#   ./bootstrap-etcd.sh join <node-name> <node-ip> <existing-node-ip> [cert-dir]
+#
+# Examples:
+#   # Bootstrap first node (single-node cluster):
+#   ./bootstrap-etcd.sh init controlplane01 192.168.56.11
+#
+#   # Join subsequent nodes (runs etcdctl member add automatically):
+#   ./bootstrap-etcd.sh join controlplane02 192.168.56.12 192.168.56.11
+#   ./bootstrap-etcd.sh join controlplane03 192.168.56.13 192.168.56.11
 
-NODE_NAME="${1:?Usage: $0 <node-name> <node-ip> <etcd-1-ip> <etcd-2-ip> <etcd-3-ip> [cert-dir]}"
-NODE_IP="${2:?Missing node-ip}"
-ETCD1_IP="${3:?Missing etcd-1-ip}"
-ETCD2_IP="${4:?Missing etcd-2-ip}"
-ETCD3_IP="${5:?Missing etcd-3-ip}"
-CERT_DIR="${6:-/etc/etcd}"
+MODE="${1:?Usage: $0 {init|join} <node-name> <node-ip> [existing-node-ip] [cert-dir]}"
+NODE_NAME="${2:?Missing node-name}"
+NODE_IP="${3:?Missing node-ip}"
+EXISTING_IP="${4:-}"
+CERT_DIR="${5:-/etc/etcd}"
 DATA_DIR="/var/lib/etcd"
 ETCD_VERSION="v3.5.12"
 CLUSTER_TOKEN="etcd-cluster-2026"
+
+if [ "${MODE}" != "init" ] && [ "${MODE}" != "join" ]; then
+  echo "ERROR: Mode must be 'init' or 'join'"
+  exit 1
+fi
+
+if [ "${MODE}" = "join" ] && [ -z "${EXISTING_IP}" ]; then
+  echo "ERROR: join mode requires <existing-node-ip>"
+  exit 1
+fi
 
 echo "=== Bootstrap etcd node: ${NODE_NAME} (${NODE_IP}) ==="
 echo ""
@@ -52,8 +71,27 @@ echo "  ✓ All certs present in ${CERT_DIR}"
 sudo mkdir -p "${DATA_DIR}"
 echo "  ✓ Data dir: ${DATA_DIR}"
 
-# --- Build initial-cluster string ---
-INITIAL_CLUSTER="controlplane01=https://${ETCD1_IP}:2380,controlplane02=https://${ETCD2_IP}:2380,controlplane03=https://${ETCD3_IP}:2380"
+# --- For join mode: register as member first ---
+if [ "${MODE}" = "join" ]; then
+  echo "Registering ${NODE_NAME} as member in existing cluster..."
+  export ETCDCTL_API=3
+  etcdctl \
+    --endpoints="https://${EXISTING_IP}:2379" \
+    --cacert="${CERT_DIR}/etcd-ca.pem" \
+    --cert="${CERT_DIR}/etcd-server.pem" \
+    --key="${CERT_DIR}/etcd-server-key.pem" \
+    member add "${NODE_NAME}" \
+    --peer-urls="https://${NODE_IP}:2380"
+  echo "  ✓ Member ${NODE_NAME} added to cluster"
+fi
+
+# --- Build initial-cluster + extra flags (only this node, like kubeadm) ---
+INITIAL_CLUSTER="${NODE_NAME}=https://${NODE_IP}:2380"
+if [ "${MODE}" = "init" ]; then
+  INITIAL_FLAGS="--initial-cluster=${INITIAL_CLUSTER} --initial-cluster-state=new --initial-cluster-token=${CLUSTER_TOKEN}"
+else
+  INITIAL_FLAGS="--initial-cluster=${INITIAL_CLUSTER}"
+fi
 
 # --- Create systemd unit ---
 echo "Creating systemd unit..."
@@ -73,9 +111,7 @@ ExecStart=/usr/local/bin/etcd \\
   --listen-metrics-urls=http://127.0.0.1:2381 \\
   --initial-advertise-peer-urls=https://${NODE_IP}:2380 \\
   --advertise-client-urls=https://${NODE_IP}:2379 \\
-  --initial-cluster=${INITIAL_CLUSTER} \\
-  --initial-cluster-state=new \\
-  --initial-cluster-token=${CLUSTER_TOKEN} \\
+  ${INITIAL_FLAGS} \\
   --client-cert-auth=true \\
   --trusted-ca-file=${CERT_DIR}/etcd-ca.pem \\
   --cert-file=${CERT_DIR}/etcd-server.pem \\
@@ -135,7 +171,14 @@ etcdctl \
 echo ""
 echo "=== etcd node ${NODE_NAME} bootstrap complete ==="
 echo ""
-echo "Next steps:"
-echo "  1. Run this script on controlplane02 and controlplane03 (with their respective IPs)"
-echo "  2. Verify cluster: etcdctl member list --write-out=table"
-echo "  3. Verify health:  etcdctl endpoint health"
+if [ "${MODE}" = "init" ]; then
+  echo "Next steps:"
+  echo "  1. Join controlplane02: ./bootstrap-etcd.sh join controlplane02 192.168.56.12 ${NODE_IP}"
+  echo "  2. Join controlplane03: ./bootstrap-etcd.sh join controlplane03 192.168.56.13 ${NODE_IP}"
+  echo "  3. Verify cluster: etcdctl member list --write-out=table"
+  echo "  4. Verify health:  etcdctl endpoint health"
+else
+  echo "Next steps:"
+  echo "  1. Verify cluster: etcdctl member list --write-out=table"
+  echo "  2. Verify health:  etcdctl endpoint health"
+fi

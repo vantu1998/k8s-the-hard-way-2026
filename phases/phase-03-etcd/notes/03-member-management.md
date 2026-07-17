@@ -36,21 +36,20 @@ etcdctl member add controlplane04 \
 # ETCD_INITIAL_CLUSTER_STATE="existing"
 ```
 
-> **Quan trọng**: `--initial-cluster-state=existing` (không phải `new`) — vì cluster đã tồn tại.
+> **Lưu ý**: `etcdctl member add` output chứa `ETCD_INITIAL_CLUSTER` với tất cả members và `ETCD_INITIAL_CLUSTER_STATE=existing`. Tuy nhiên, giống kubeadm, bạn **không cần** dùng full cluster list — chỉ cần `--initial-cluster` chứa node đó. Cluster membership thật sự đến từ Raft (leader đã biết về node mới qua `member add`).
 
-### Bước 2: Start etcd-4 với config được cấp
+### Bước 2: Start controlplane04 với config (kubeadm-style)
 
 ```bash
 etcd \
-  --name=etcd-4 \
+  --name=controlplane04 \
   --data-dir=/var/lib/etcd \
   --listen-peer-urls=https://192.168.56.24:2380 \
   --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.24:2379 \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.24:2380 \
   --advertise-client-urls=https://192.168.56.24:2379 \
-  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380,controlplane04=https://192.168.56.24:2380 \
-  --initial-cluster-state=existing \
+  --initial-cluster=controlplane04=https://192.168.56.24:2380 \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --cert-file=/etc/etcd/etcd-server.pem \
@@ -61,11 +60,13 @@ etcd \
   --peer-key-file=/etc/etcd/etcd-peer-key.pem
 ```
 
+> **Khác biệt so với cách truyền thống**: `etcdctl member add` output gợi ý dùng `--initial-cluster-state=existing` + full cluster list. kubeadm bỏ qua — chỉ dùng `--initial-cluster` chứa node đó, không set `--initial-cluster-state` (default `new`). Cả hai cách đều hoạt động.
+
 ### Bước 3: Verify
 
 ```bash
 etcdctl member list --write-out=table
-# Bây giờ thấy 4 member, etcd-4 status = started
+# Bây giờ thấy 4 member, controlplane04 status = started
 ```
 
 ### Quá trình bên trong
@@ -74,8 +75,8 @@ etcdctl member list --write-out=table
 1. etcdctl member add → Leader ghi config mới vào Raft log
 2. Leader replicate "new member" cho follower
 3. Quorum commit → member mới ở trạng thái "unstarted"
-4. etcd-4 start → kết nối peer URL → Leader sync data cho etcd-4
-5. etcd-4 nhận đủ data → status chuyển sang "started"
+4. controlplane04 start → kết nối peer URL → Leader sync data cho controlplane04
+5. controlplane04 nhận đủ data → status chuyển sang "started"
 ```
 
 > **Cảnh báo**: Không thêm quá 1 member cùng lúc. Thêm member thay đổi quorum — nếu thêm 2 member cùng lúc và 1 fail, cluster có thể bị stuck.
@@ -98,10 +99,10 @@ etcdctl member remove 91bc3c398fb3c146
 # Member 91bc3c398fb3c146 removed from cluster
 ```
 
-### Bước 3: Stop etcd-2 (nếu chưa)
+### Bước 3: Stop controlplane02 (nếu chưa)
 
 ```bash
-# Trên etcd-2:
+# Trên controlplane02:
 sudo systemctl stop etcd
 ```
 
@@ -110,7 +111,7 @@ sudo systemctl stop etcd
 ```
 1. etcdctl member remove → Leader ghi "remove member" vào Raft log
 2. Quorum commit → member bị remove, cluster shrink từ 3 → 2
-3. etcd-2 bị kick — nhận Raft message "you're not a member" → tự shutdown
+3. controlplane02 bị kick — nhận Raft message "you're not a member" → tự shutdown
 4. Quorum mới = (2/2)+1 = 2 → cluster 2 node (chỉ chịu 0 failure!)
 ```
 

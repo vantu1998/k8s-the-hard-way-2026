@@ -439,10 +439,12 @@ spec:
 
 ### External etcd
 
-Khi chạy etcd ngoài cluster (không phải static pod), etcd chạy như **systemd service**:
+Khi chạy etcd ngoài cluster (không phải static pod), etcd chạy như **systemd service**. Giống kubeadm, bootstrap từng node một — node đầu start như single-node cluster, các node sau join qua `etcdctl member add`.
+
+#### Node đầu tiên (controlplane01) — bootstrap single-node cluster
 
 ```ini
-# /etc/systemd/system/etcd.service (production-style)
+# /etc/systemd/system/etcd.service — controlplane01
 [Unit]
 Description=etcd
 After=network.target
@@ -458,7 +460,7 @@ ExecStart=/usr/local/bin/etcd \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.11:2380 \
   --advertise-client-urls=https://192.168.56.11:2379 \
-  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380 \
   --initial-cluster-state=new \
   --initial-cluster-token=etcd-cluster-2026 \
   --client-cert-auth=true \
@@ -484,14 +486,73 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 ```
 
+#### Node 2, 3 (controlplane02, controlplane03) — join cluster
+
+Trước khi start node mới, chạy `etcdctl member add`:
+
+```bash
+# Trên controlplane01:
+etcdctl member add controlplane02 \
+  --peer-urls=https://192.168.56.12:2380
+```
+
+Sau đó tạo systemd unit trên node mới:
+
+```ini
+# /etc/systemd/system/etcd.service — controlplane02
+[Unit]
+Description=etcd
+After=network.target
+
+[Service]
+Type=notify
+User=root
+ExecStart=/usr/local/bin/etcd \
+  --name=controlplane02 \
+  --data-dir=/var/lib/etcd \
+  --listen-peer-urls=https://192.168.56.12:2380 \
+  --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.12:2379 \
+  --listen-metrics-urls=http://127.0.0.1:2381 \
+  --initial-advertise-peer-urls=https://192.168.56.12:2380 \
+  --advertise-client-urls=https://192.168.56.12:2379 \
+  --initial-cluster=controlplane02=https://192.168.56.12:2380 \
+  --client-cert-auth=true \
+  --trusted-ca-file=/etc/etcd/etcd-ca.pem \
+  --cert-file=/etc/etcd/etcd-server.pem \
+  --key-file=/etc/etcd/etcd-server-key.pem \
+  --peer-client-cert-auth=true \
+  --peer-trusted-ca-file=/etc/etcd/etcd-ca.pem \
+  --peer-cert-file=/etc/etcd/etcd-peer.pem \
+  --peer-key-file=/etc/etcd/etcd-peer-key.pem \
+  --heartbeat-interval=100 \
+  --election-timeout=1000 \
+  --snapshot-count=10000 \
+  --watch-progress-notify-interval=5s \
+  --feature-gates=InitialCorruptCheck=true \
+  --auto-compaction-mode=periodic \
+  --auto-compaction-retention=1h
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Khác biệt so với node đầu**:
+> - `--initial-cluster` chỉ chứa node đó (không liệt kê tất cả)
+> - Không có `--initial-cluster-state` (default `new` — etcd nhận Raft messages từ leader và join)
+> - Không có `--initial-cluster-token` (chỉ cần cho node đầu bootstrap)
+> - Phải chạy `etcdctl member add` trước khi start etcd
+
 ## Các flag quan trọng khác
 
 | Flag | Mặc định | Ý nghĩa |
 |------|----------|---------|
 | `--name` | `default` | Tên node — phải unique trong cluster |
 | `--data-dir` | `default.etcd` | Thư mục lưu data |
-| `--initial-cluster-state` | `new` | `new` (bootstrap) hoặc `existing` (join cluster đang chạy) |
-| `--initial-cluster-token` | `etcd-cluster` | Token unique cho cluster — tránh cross-talk giữa các cluster |
+| `--initial-cluster-state` | `new` | `new` (bootstrap node đầu) — các node sau không cần set (default `new` + `member add` = join) |
+| `--initial-cluster-token` | `etcd-cluster` | Token unique cho cluster — chỉ cần cho node đầu bootstrap |
 | `--heartbeat-interval` | `100ms` | Khoảng thời gian leader gửi heartbeat |
 | `--election-timeout` | `1000ms` | Timeout chờ heartbeat — quá thời gian thì election mới |
 | `--snapshot-count` | `10000` | Số transaction trước khi tạo snapshot |
