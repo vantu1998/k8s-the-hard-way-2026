@@ -36,9 +36,9 @@ etcdctl member add controlplane04 \
 # ETCD_INITIAL_CLUSTER_STATE="existing"
 ```
 
-> **Lưu ý**: `etcdctl member add` output chứa `ETCD_INITIAL_CLUSTER` với tất cả members và `ETCD_INITIAL_CLUSTER_STATE=existing`. Tuy nhiên, giống kubeadm, bạn **không cần** dùng full cluster list — chỉ cần `--initial-cluster` chứa node đó. Cluster membership thật sự đến từ Raft (leader đã biết về node mới qua `member add`).
+> **Quan trọng**: `etcdctl member add` output chứa `ETCD_INITIAL_CLUSTER` với tất cả members và `ETCD_INITIAL_CLUSTER_STATE=existing`. Bạn **phải dùng** đúng output này cho `--initial-cluster` và `--initial-cluster-state` khi start node mới. etcd tính cluster ID bằng cách hash member set trong `--initial-cluster` — nếu chỉ chứa node đó, cluster ID sẽ khác → peer connection bị reject (cluster ID mismatch).
 
-### Bước 2: Start controlplane04 với config (kubeadm-style)
+### Bước 2: Start controlplane04 với config từ `member add` output
 
 ```bash
 etcd \
@@ -49,7 +49,8 @@ etcd \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.24:2380 \
   --advertise-client-urls=https://192.168.56.24:2379 \
-  --initial-cluster=controlplane04=https://192.168.56.24:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380,controlplane04=https://192.168.56.24:2380 \
+  --initial-cluster-state=existing \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --cert-file=/etc/etcd/etcd-server.pem \
@@ -60,7 +61,7 @@ etcd \
   --peer-key-file=/etc/etcd/etcd-peer-key.pem
 ```
 
-> **Khác biệt so với cách truyền thống**: `etcdctl member add` output gợi ý dùng `--initial-cluster-state=existing` + full cluster list. kubeadm bỏ qua — chỉ dùng `--initial-cluster` chứa node đó, không set `--initial-cluster-state` (default `new`). Cả hai cách đều hoạt động.
+> **Giống kubeadm**: kubeadm cũng dùng full cluster list từ `AddMemberAsLearner` response khi tạo static pod manifest cho join nodes. `--initial-cluster-state=existing` báo etcd rằng cluster đã tồn tại — etcd sẽ join thay vì bootstrap cluster mới.
 
 ### Bước 3: Verify
 

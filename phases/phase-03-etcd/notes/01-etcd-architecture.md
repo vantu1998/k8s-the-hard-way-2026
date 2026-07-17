@@ -418,6 +418,60 @@ spec:
     name: etcd-data
 ```
 
+> Manifest trên là của **init node** (controlplane01). `--initial-cluster` chỉ chứa node đó, không có `--initial-cluster-state` (default `new`).
+
+#### Join node manifest (controlplane02)
+
+Khi `kubeadm join` thêm control plane node mới, kubeadm:
+1. Gọi `etcdctl member add` (AddMemberAsLearner) → nhận full cluster list
+2. Tạo manifest với full cluster list + `--initial-cluster-state=existing`
+
+```yaml
+# /etc/kubernetes/manifests/etcd.yaml — controlplane02 (join node)
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    kubeadm.kubernetes.io/etcd.advertise-client-urls: https://192.168.56.12:2379
+  labels:
+    component: etcd
+    tier: control-plane
+  name: etcd
+  namespace: kube-system
+spec:
+  containers:
+  - command:
+    - etcd
+    - --advertise-client-urls=https://192.168.56.12:2379
+    - --cert-file=/etc/kubernetes/pki/etcd/server.crt
+    - --client-cert-auth=true
+    - --data-dir=/var/lib/etcd
+    - --feature-gates=InitialCorruptCheck=true
+    - --initial-advertise-peer-urls=https://192.168.56.12:2380
+    - --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380
+    - --initial-cluster-state=existing
+    - --key-file=/etc/kubernetes/pki/etcd/server.key
+    - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.12:2379
+    - --listen-metrics-urls=http://127.0.0.1:2381
+    - --listen-peer-urls=https://192.168.56.12:2380
+    - --name=controlplane02
+    - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
+    - --peer-client-cert-auth=true
+    - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
+    - --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+    - --snapshot-count=10000
+    - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+    - --watch-progress-notify-interval=5s
+    image: registry.k8s.io/etcd:3.6.8-0
+    # ... (probes, volumes, etc. giống init node)
+```
+
+> **Khác biệt init vs join manifest**:
+> - **Init**: `--initial-cluster=controlplane01=...` (chỉ node đó), không có `--initial-cluster-state` (default `new`)
+> - **Join**: `--initial-cluster=controlplane01=...,controlplane02=...` (full list từ `member add`), `--initial-cluster-state=existing`
+>
+> Source: `kubeadm/app/phases/etcd/local.go` — `getEtcdCommand()` function.
+
 ### Giải thích các thành phần trong manifest
 
 | Thành phần | Ý nghĩa |
@@ -515,7 +569,8 @@ ExecStart=/usr/local/bin/etcd \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.12:2380 \
   --advertise-client-urls=https://192.168.56.12:2379 \
-  --initial-cluster=controlplane02=https://192.168.56.12:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380 \
+  --initial-cluster-state=existing \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --cert-file=/etc/etcd/etcd-server.pem \
@@ -540,8 +595,8 @@ WantedBy=multi-user.target
 ```
 
 > **Khác biệt so với node đầu**:
-> - `--initial-cluster` chỉ chứa node đó (không liệt kê tất cả)
-> - Không có `--initial-cluster-state` (default `new` — etcd nhận Raft messages từ leader và join)
+> - `--initial-cluster` chứa tất cả members hiện có (từ `etcdctl member add` output) — đảm bảo cluster ID khớp
+> - `--initial-cluster-state=existing` (không phải `new` — cluster đã tồn tại)
 > - Không có `--initial-cluster-token` (chỉ cần cho node đầu bootstrap)
 > - Phải chạy `etcdctl member add` trước khi start etcd
 
@@ -551,7 +606,7 @@ WantedBy=multi-user.target
 |------|----------|---------|
 | `--name` | `default` | Tên node — phải unique trong cluster |
 | `--data-dir` | `default.etcd` | Thư mục lưu data |
-| `--initial-cluster-state` | `new` | `new` (bootstrap node đầu) — các node sau không cần set (default `new` + `member add` = join) |
+| `--initial-cluster-state` | `new` | `new` (bootstrap node đầu), `existing` (join node mới vào cluster đang chạy) |
 | `--initial-cluster-token` | `etcd-cluster` | Token unique cho cluster — chỉ cần cho node đầu bootstrap |
 | `--heartbeat-interval` | `100ms` | Khoảng thời gian leader gửi heartbeat |
 | `--election-timeout` | `1000ms` | Timeout chờ heartbeat — quá thời gian thì election mới |

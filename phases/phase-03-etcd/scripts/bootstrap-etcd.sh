@@ -75,22 +75,25 @@ echo "  ✓ Data dir: ${DATA_DIR}"
 if [ "${MODE}" = "join" ]; then
   echo "Registering ${NODE_NAME} as member in existing cluster..."
   export ETCDCTL_API=3
-  etcdctl \
+  MEMBER_OUTPUT=$(etcdctl \
     --endpoints="https://${EXISTING_IP}:2379" \
     --cacert="${CERT_DIR}/etcd-ca.pem" \
     --cert="${CERT_DIR}/etcd-server.pem" \
     --key="${CERT_DIR}/etcd-server-key.pem" \
     member add "${NODE_NAME}" \
-    --peer-urls="https://${NODE_IP}:2380"
+    --peer-urls="https://${NODE_IP}:2380")
+  echo "${MEMBER_OUTPUT}"
+  # Extract ETCD_INITIAL_CLUSTER from member add output
+  INITIAL_CLUSTER=$(echo "${MEMBER_OUTPUT}" | grep '^ETCD_INITIAL_CLUSTER=' | cut -d'"' -f2)
   echo "  ✓ Member ${NODE_NAME} added to cluster"
 fi
 
-# --- Build initial-cluster + extra flags (only this node, like kubeadm) ---
-INITIAL_CLUSTER="${NODE_NAME}=https://${NODE_IP}:2380"
+# --- Build initial-cluster + extra flags ---
 if [ "${MODE}" = "init" ]; then
+  INITIAL_CLUSTER="${NODE_NAME}=https://${NODE_IP}:2380"
   INITIAL_FLAGS="--initial-cluster=${INITIAL_CLUSTER} --initial-cluster-state=new --initial-cluster-token=${CLUSTER_TOKEN}"
 else
-  INITIAL_FLAGS="--initial-cluster=${INITIAL_CLUSTER}"
+  INITIAL_FLAGS="--initial-cluster=${INITIAL_CLUSTER} --initial-cluster-state=existing"
 fi
 
 # --- Create systemd unit ---

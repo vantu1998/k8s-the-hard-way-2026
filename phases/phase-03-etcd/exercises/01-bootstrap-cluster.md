@@ -218,6 +218,8 @@ etcdctl member list --write-out=table
 
 ## Bước 6: Add controlplane02 vào cluster
 
+> **⚠️ Thứ tự BẮT BUỘC**: Phải làm theo đúng thứ tự 6a → 6b → 6c. Nếu start etcd trên controlplane02 (6c) TRƯỚC khi `etcdctl member add` (6a), controlplane02 sẽ bootstrap như cluster mới (vì `--initial-cluster-state` default = `new`), tạo ra 2 cluster riêng biệt → split-brain. Nếu bị lỗi này, stop etcd trên controlplane02, xóa `/var/lib/etcd`, rồi làm lại từ 6a.
+
 ### 6a. Register controlplane02 as member
 
 Trên **controlplane01** (hoặc bất kỳ node nào đã chạy):
@@ -252,7 +254,8 @@ ExecStart=/usr/local/bin/etcd \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.12:2380 \
   --advertise-client-urls=https://192.168.56.12:2379 \
-  --initial-cluster=controlplane02=https://192.168.56.12:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380 \
+  --initial-cluster-state=existing \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --cert-file=/etc/etcd/etcd-server.pem \
@@ -276,8 +279,8 @@ EOF
 ```
 
 > **Khác biệt so với node đầu**:
-> - `--initial-cluster` chỉ chứa `controlplane02` (chỉ node này, giống kubeadm)
-> - Không có `--initial-cluster-state` (default `new` — etcd nhận Raft messages từ leader và join cluster)
+> - `--initial-cluster` chứa tất cả members hiện có (từ `etcdctl member add` output) — đảm bảo cluster ID khớp
+> - `--initial-cluster-state=existing` (không phải `new` — cluster đã tồn tại)
 > - Không có `--initial-cluster-token` (chỉ cần cho node đầu bootstrap)
 
 ### 6c. Start controlplane02
@@ -308,6 +311,8 @@ etcdctl member list --write-out=table
 
 ## Bước 7: Add controlplane03 vào cluster
 
+> **⚠️ Thứ tự BẮT BUỘC**: Tương tự Bước 6 — phải `etcdctl member add` (7a) TRƯỚC khi start etcd (7c).
+
 ### 7a. Register controlplane03 as member
 
 ```bash
@@ -337,7 +342,8 @@ ExecStart=/usr/local/bin/etcd \
   --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.13:2380 \
   --advertise-client-urls=https://192.168.56.13:2379 \
-  --initial-cluster=controlplane03=https://192.168.56.13:2380 \
+  --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
+  --initial-cluster-state=existing \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --cert-file=/etc/etcd/etcd-server.pem \
@@ -452,15 +458,15 @@ sudo journalctl -u etcd --no-pager | tail -30
 ## Câu hỏi tự kiểm tra
 
 1. `--listen-client-urls` vs `--advertise-client-urls` khác nhau thế nào?
-2. Tại sao `--initial-cluster` trên controlplane02 chỉ chứa `controlplane02` mà không cần liệt kê tất cả 3 node?
-3. Tại sao controlplane02 không cần `--initial-cluster-state=existing` khi join cluster?
+2. Tại sao `--initial-cluster` trên controlplane02 phải liệt kê tất cả members hiện có (không chỉ `controlplane02`)?
+3. Tại sao controlplane02 cần `--initial-cluster-state=existing` khi join cluster?
 4. Tại sao cần `--peer-client-cert-auth=true`? Nếu tắt thì có rủi ro gì?
 5. Nếu controlplane02 không join được sau `etcdctl member add`, làm sao debug?
 
 ## Đáp án tham khảo
 
 1. `--listen-client-urls` = etcd lắng nghe ở interface nào (production: `127.0.0.1` + IP cụ thể, không dùng `0.0.0.0`). `--advertise-client-urls` = URL client dùng để kết nối (IP node). `127.0.0.1` cho phép kube-apiserver trên cùng node kết nối qua localhost — nhanh hơn, không qua network stack.
-2. Vì `etcdctl member add` đã thông báo cho leader về node mới. `--initial-cluster` chỉ cần đúng để etcd biết "ta là ai" (match `--name`). Cluster membership thật sự đến từ Raft — leader push messages đến peer URL của node mới.
-3. etcd default `--initial-cluster-state=new`. Khi data dir trống và leader đã biết về node mới (qua `member add`), etcd nhận Raft messages từ leader và join cluster. kubeadm cũng không set flag này — rely vào default.
+2. etcd tính cluster ID bằng cách hash member set trong `--initial-cluster`. Nếu controlplane02 chỉ chứa chính nó, cluster ID sẽ khác controlplane01 → peer connection bị reject (cluster ID mismatch). Phải dùng full cluster list từ `etcdctl member add` output để cluster ID khớp. kubeadm cũng dùng full cluster list (lấy từ `AddMemberAsLearner` response) khi tạo static pod manifest cho join nodes.
+3. `--initial-cluster-state=existing` báo etcd rằng cluster đã tồn tại — etcd sẽ join thay vì bootstrap cluster mới. Nếu dùng default `new`, etcd sẽ tạo cluster mới với cluster ID riêng → split-brain.
 4. Nếu tắt peer mTLS, bất kỳ ai reach port 2380 có thể join cluster giả mạo. mTLS đảm bảo chỉ etcd node có cert mới kết nối được.
 5. `journalctl -u etcd` xem log trên controlplane02. Kiểm tra: cert sai, IP sai trong `--listen-peer-urls`, firewall block port 2380, hoặc `etcdctl member add` chưa được commit trước khi start node mới.
