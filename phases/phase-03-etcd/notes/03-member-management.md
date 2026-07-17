@@ -44,8 +44,9 @@ etcdctl member add controlplane04 \
 etcd \
   --name=etcd-4 \
   --data-dir=/var/lib/etcd \
-  --listen-peer-urls=https://0.0.0.0:2380 \
-  --listen-client-urls=https://0.0.0.0:2379 \
+  --listen-peer-urls=https://192.168.56.24:2380 \
+  --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.24:2379 \
+  --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.24:2380 \
   --advertise-client-urls=https://192.168.56.24:2379 \
   --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380,controlplane04=https://192.168.56.24:2380 \

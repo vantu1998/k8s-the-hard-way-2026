@@ -129,8 +129,9 @@ User=root
 ExecStart=/usr/local/bin/etcd \
   --name=controlplane01 \
   --data-dir=/var/lib/etcd \
-  --listen-peer-urls=https://0.0.0.0:2380 \
-  --listen-client-urls=https://0.0.0.0:2379 \
+  --listen-peer-urls=https://192.168.56.11:2380 \
+  --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.11:2379 \
+  --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.11:2380 \
   --advertise-client-urls=https://192.168.56.11:2379 \
   --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
@@ -145,7 +146,10 @@ ExecStart=/usr/local/bin/etcd \
   --peer-cert-file=/etc/etcd/etcd-peer.pem \
   --peer-key-file=/etc/etcd/etcd-peer-key.pem \
   --heartbeat-interval=100 \
-  --election-timeout=1000
+  --election-timeout=1000 \
+  --snapshot-count=10000 \
+  --watch-progress-notify-interval=5s \
+  --feature-gates=InitialCorruptCheck=true
 Restart=always
 RestartSec=5
 LimitNOFILE=65536
@@ -155,20 +159,40 @@ WantedBy=multi-user.target
 EOF
 ```
 
-Trên **controlplane02** — đổi `--name=controlplane02`, `--initial-advertise-peer-urls=https://192.168.56.12:2380`, `--advertise-client-urls=https://192.168.56.12:2379`. Giữ `--initial-cluster` giống nhau.
+Trên **controlplane02** — đổi:
+- `--name=controlplane02`
+- `--listen-peer-urls=https://192.168.56.12:2380`
+- `--listen-client-urls=https://127.0.0.1:2379,https://192.168.56.12:2379`
+- `--initial-advertise-peer-urls=https://192.168.56.12:2380`
+- `--advertise-client-urls=https://192.168.56.12:2379`
 
-Trên **controlplane03** — đổi `--name=controlplane03`, `--initial-advertise-peer-urls=https://192.168.56.13:2380`, `--advertise-client-urls=https://192.168.56.13:2379`. Giữ `--initial-cluster` giống nhau.
+Giữ `--initial-cluster` và `--listen-metrics-urls` giống nhau.
+
+Trên **controlplane03** — đổi:
+- `--name=controlplane03`
+- `--listen-peer-urls=https://192.168.56.13:2380`
+- `--listen-client-urls=https://127.0.0.1:2379,https://192.168.56.13:2379`
+- `--initial-advertise-peer-urls=https://192.168.56.13:2380`
+- `--advertise-client-urls=https://192.168.56.13:2379`
+
+Giữ `--initial-cluster` và `--listen-metrics-urls` giống nhau.
 
 ### Giải thích flags quan trọng
 
 | Flag | Ý nghĩa |
 |------|---------|
 | `--name` | Unique name cho node |
+| `--listen-peer-urls` | Bind peer listener vào IP cụ thể (không dùng `0.0.0.0` trong prod) |
+| `--listen-client-urls` | Bind client listener vào `127.0.0.1` + IP cụ thể (localhost cho apiserver, IP cho external) |
+| `--listen-metrics-urls` | Metrics endpoint trên port 2381 HTTP (cho Prometheus scrape) |
 | `--initial-cluster-state=new` | Bootstrap cluster mới (không phải join cluster đang chạy) |
 | `--initial-cluster` | Tất cả member + peer URL — phải giống trên mọi node |
 | `--initial-cluster-token` | Unique token — tránh cross-talk giữa cluster |
 | `--client-cert-auth=true` | Yêu cầu client trình cert (mTLS) |
 | `--peer-client-cert-auth=true` | Yêu cầu peer trình cert (mTLS giữa etcd nodes) |
+| `--snapshot-count=10000` | Số transaction trước khi tạo snapshot (default 10000) |
+| `--watch-progress-notify-interval=5s` | Notify watcher về progress mỗi 5s |
+| `--feature-gates=InitialCorruptCheck=true` | Kiểm tra data integrity khi start |
 
 ## Bước 5: Start etcd trên tất cả node
 
@@ -275,7 +299,7 @@ sudo journalctl -u etcd --no-pager | tail -30
 
 ## Đáp án tham khảo
 
-1. `--listen-client-urls` = etcd lắng nghe ở interface nào (thường `0.0.0.0`). `--advertise-client-urls` = URL client dùng để kết nối (thường IP node).
+1. `--listen-client-urls` = etcd lắng nghe ở interface nào (production: `127.0.0.1` + IP cụ thể, không dùng `0.0.0.0`). `--advertise-client-urls` = URL client dùng để kết nối (IP node). `127.0.0.1` cho phép kube-apiserver trên cùng node kết nối qua localhost — nhanh hơn, không qua network stack.
 2. Vì `--initial-cluster` định nghĩa cluster topology — tất cả node phải đồng ý về topology khi bootstrap.
 3. `new` = bootstrap cluster mới (lần đầu). `existing` = join cluster đang chạy (add member).
 4. Nếu tắt peer mTLS, bất kỳ ai reach port 2380 có thể join cluster giả mạo. mTLS đảm bảo chỉ etcd node có cert mới kết nối được.

@@ -78,10 +78,12 @@ etcdctl        ──► etcd:2379 (client URL)
 - `--advertise-client-urls`: URL mà client dùng để kết nối (thường là IP node).
 
 ```bash
-# Ví dụ:
---listen-client-urls=https://0.0.0.0:2379
+# Production (như kubeadm):
+--listen-client-urls=https://127.0.0.1:2379,https://192.168.56.11:2379
 --advertise-client-urls=https://192.168.56.11:2379
 ```
+
+> `127.0.0.1` cho phép kube-apiserver trên cùng node kết nối qua localhost — nhanh hơn, không qua network stack. IP cụ thể cho external access. **Không dùng `0.0.0.0` trong production** — mở trên tất cả interface, kém an toàn.
 
 ### 2. Peer URL (`--listen-peer-urls`, `--initial-advertise-peer-urls`)
 
@@ -97,20 +99,33 @@ etcd-2 ◄──► etcd-3  (peer URL, port 2380)
 - `--initial-advertise-peer-urls`: URL mà peer khác dùng để kết nối.
 
 ```bash
-# Ví dụ:
---listen-peer-urls=https://0.0.0.0:2380
+# Production (như kubeadm):
+--listen-peer-urls=https://192.168.56.11:2380
 --initial-advertise-peer-urls=https://192.168.56.11:2380
 ```
 
+> Bind vào IP cụ thể — chỉ interface đó nhận peer traffic. **Không dùng `0.0.0.0`** trong production, đặc biệt khi node có nhiều interface (public + private).
+
+### 3. Metrics URL (`--listen-metrics-urls`)
+
+etcd expose Prometheus metrics tại `/metrics`. Production tách metrics ra port riêng (HTTP, không TLS):
+
+```bash
+--listen-metrics-urls=http://127.0.0.1:2381
+```
+
+> Port 2381 HTTP — Prometheus scrape qua localhost, không cần TLS overhead. Bind `127.0.0.1` = chỉ scrape từ localhost (hoặc qua proxy).
+
 ### Tóm tắt URL config
 
-| Flag | Dùng cho | Port |
-|------|----------|------|
-| `--listen-client-urls` | etcd lắng nghe client | 2379 |
-| `--advertise-client-urls` | Client kết nối đến | 2379 |
-| `--listen-peer-urls` | etcd lắng nghe peer | 2380 |
-| `--initial-advertise-peer-urls` | Peer kết nối đến | 2380 |
-| `--initial-cluster` | Danh sách tất cả peer URL | 2380 |
+| Flag | Dùng cho | Port | Protocol |
+|------|----------|------|----------|
+| `--listen-client-urls` | etcd lắng nghe client | 2379 | HTTPS |
+| `--advertise-client-urls` | Client kết nối đến | 2379 | HTTPS |
+| `--listen-peer-urls` | etcd lắng nghe peer | 2380 | HTTPS |
+| `--initial-advertise-peer-urls` | Peer kết nối đến | 2380 | HTTPS |
+| `--initial-cluster` | Danh sách tất cả peer URL | 2380 | HTTPS |
+| `--listen-metrics-urls` | Prometheus scrape | 2381 | HTTP |
 
 ## etcd v2 vs etcd v3
 
@@ -307,37 +322,91 @@ etcd lưu data trong `--data-dir` (mặc định: `/var/lib/etcd/` hoặc `defau
 kubeadm chạy etcd như **static pod** — manifest trong `/etc/kubernetes/manifests/etcd.yaml`:
 
 ```yaml
-# /etc/kubernetes/manifests/etcd.yaml (rút gọn)
+# /etc/kubernetes/manifests/etcd.yaml (full manifest như kubeadm generate)
 apiVersion: v1
 kind: Pod
 metadata:
+  annotations:
+    kubeadm.kubernetes.io/etcd.advertise-client-urls: https://192.168.56.11:2379
+  labels:
+    component: etcd
+    tier: control-plane
   name: etcd
   namespace: kube-system
 spec:
   containers:
-  - name: etcd
-    command:
+  - command:
     - etcd
     - --advertise-client-urls=https://192.168.56.11:2379
     - --cert-file=/etc/kubernetes/pki/etcd/server.crt
     - --client-cert-auth=true
     - --data-dir=/var/lib/etcd
+    - --feature-gates=InitialCorruptCheck=true
     - --initial-advertise-peer-urls=https://192.168.56.11:2380
     - --initial-cluster=controlplane01=https://192.168.56.11:2380
     - --key-file=/etc/kubernetes/pki/etcd/server.key
     - --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.11:2379
+    - --listen-metrics-urls=http://127.0.0.1:2381
     - --listen-peer-urls=https://192.168.56.11:2380
     - --name=controlplane01
     - --peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt
     - --peer-client-cert-auth=true
     - --peer-key-file=/etc/kubernetes/pki/etcd/peer.key
     - --peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+    - --snapshot-count=10000
     - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
+    - --watch-progress-notify-interval=5s
+    image: registry.k8s.io/etcd:3.5.12-0
+    imagePullPolicy: IfNotPresent
+    livenessProbe:
+      failureThreshold: 8
+      httpGet:
+        host: 127.0.0.1
+        path: /livez
+        port: probe-port
+        scheme: HTTP
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 15
+    name: etcd
+    ports:
+    - containerPort: 2381
+      name: probe-port
+      protocol: TCP
+    readinessProbe:
+      failureThreshold: 3
+      httpGet:
+        host: 127.0.0.1
+        path: /readyz
+        port: probe-port
+        scheme: HTTP
+      periodSeconds: 1
+      timeoutSeconds: 15
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+    startupProbe:
+      failureThreshold: 24
+      httpGet:
+        host: 127.0.0.1
+        path: /readyz
+        port: probe-port
+        scheme: HTTP
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 15
     volumeMounts:
     - mountPath: /var/lib/etcd
       name: etcd-data
     - mountPath: /etc/kubernetes/pki/etcd
       name: etcd-certs
+  hostNetwork: true
+  priority: 2000001000
+  priorityClassName: system-node-critical
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
   volumes:
   - hostPath:
       path: /etc/kubernetes/pki/etcd
@@ -349,27 +418,49 @@ spec:
     name: etcd-data
 ```
 
+### Giải thích các thành phần trong manifest
+
+| Thành phần | Ý nghĩa |
+|-----------|---------|
+| `annotations: kubeadm.kubernetes.io/etcd.advertise-client-urls` | Metadata cho kubeadm quản lý |
+| `labels: component, tier` | Labels cho control-plane component |
+| `--listen-metrics-urls=http://127.0.0.1:2381` | Metrics trên port 2381 HTTP (cho Prometheus) |
+| `--feature-gates=InitialCorruptCheck=true` | Kiểm tra data integrity khi start |
+| `--snapshot-count=10000` | Snapshot threshold (mặc định 10000) |
+| `--watch-progress-notify-interval=5s` | Notify watcher về progress mỗi 5s |
+| `livenessProbe: /livez` | Health check — kill pod nếu fail 8 lần |
+| `readinessProbe: /readyz` | Ready check — remove từ endpoints nếu fail |
+| `startupProbe: /readyz` | Startup check — chờ 24 retries trước khi consider fail |
+| `hostNetwork: true` | Dùng host network — etcd cần reach được từ other nodes |
+| `priorityClassName: system-node-critical` | Priority cao nhất — không bị evict |
+| `seccompProfile: RuntimeDefault` | Security profile — giới hạn syscalls |
+| `resources: requests` | CPU 100m, memory 100Mi — minimum guarantee |
+| `image: registry.k8s.io/etcd:3.5.12-0` | etcd image từ Kubernetes registry |
+
 ### External etcd
 
 Khi chạy etcd ngoài cluster (không phải static pod), etcd chạy như **systemd service**:
 
 ```ini
-# /etc/systemd/system/etcd.service
+# /etc/systemd/system/etcd.service (production-style)
 [Unit]
 Description=etcd
 After=network.target
 
 [Service]
 Type=notify
+User=root
 ExecStart=/usr/local/bin/etcd \
   --name=controlplane01 \
   --data-dir=/var/lib/etcd \
-  --listen-client-urls=https://0.0.0.0:2379 \
-  --advertise-client-urls=https://192.168.56.11:2379 \
-  --listen-peer-urls=https://0.0.0.0:2380 \
+  --listen-peer-urls=https://192.168.56.11:2380 \
+  --listen-client-urls=https://127.0.0.1:2379,https://192.168.56.11:2379 \
+  --listen-metrics-urls=http://127.0.0.1:2381 \
   --initial-advertise-peer-urls=https://192.168.56.11:2380 \
+  --advertise-client-urls=https://192.168.56.11:2379 \
   --initial-cluster=controlplane01=https://192.168.56.11:2380,controlplane02=https://192.168.56.12:2380,controlplane03=https://192.168.56.13:2380 \
   --initial-cluster-state=new \
+  --initial-cluster-token=etcd-cluster-2026 \
   --client-cert-auth=true \
   --trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --cert-file=/etc/etcd/etcd-server.pem \
@@ -377,9 +468,17 @@ ExecStart=/usr/local/bin/etcd \
   --peer-client-cert-auth=true \
   --peer-trusted-ca-file=/etc/etcd/etcd-ca.pem \
   --peer-cert-file=/etc/etcd/etcd-peer.pem \
-  --peer-key-file=/etc/etcd/etcd-peer-key.pem
+  --peer-key-file=/etc/etcd/etcd-peer-key.pem \
+  --heartbeat-interval=100 \
+  --election-timeout=1000 \
+  --snapshot-count=10000 \
+  --watch-progress-notify-interval=5s \
+  --feature-gates=InitialCorruptCheck=true \
+  --auto-compaction-mode=periodic \
+  --auto-compaction-retention=1h
 Restart=always
 RestartSec=5
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

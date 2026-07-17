@@ -53,7 +53,7 @@ sudo mkdir -p "${DATA_DIR}"
 echo "  ✓ Data dir: ${DATA_DIR}"
 
 # --- Build initial-cluster string ---
-INITIAL_CLUSTER="etcd-1=https://${ETCD1_IP}:2380,etcd-2=https://${ETCD2_IP}:2380,etcd-3=https://${ETCD3_IP}:2380"
+INITIAL_CLUSTER="controlplane01=https://${ETCD1_IP}:2380,controlplane02=https://${ETCD2_IP}:2380,controlplane03=https://${ETCD3_IP}:2380"
 
 # --- Create systemd unit ---
 echo "Creating systemd unit..."
@@ -68,8 +68,9 @@ User=root
 ExecStart=/usr/local/bin/etcd \\
   --name=${NODE_NAME} \\
   --data-dir=${DATA_DIR} \\
-  --listen-peer-urls=https://0.0.0.0:2380 \\
-  --listen-client-urls=https://0.0.0.0:2379 \\
+  --listen-peer-urls=https://${NODE_IP}:2380 \\
+  --listen-client-urls=https://127.0.0.1:2379,https://${NODE_IP}:2379 \\
+  --listen-metrics-urls=http://127.0.0.1:2381 \\
   --initial-advertise-peer-urls=https://${NODE_IP}:2380 \\
   --advertise-client-urls=https://${NODE_IP}:2379 \\
   --initial-cluster=${INITIAL_CLUSTER} \\
@@ -85,6 +86,9 @@ ExecStart=/usr/local/bin/etcd \\
   --peer-key-file=${CERT_DIR}/etcd-peer-key.pem \\
   --heartbeat-interval=100 \\
   --election-timeout=1000 \\
+  --snapshot-count=10000 \\
+  --watch-progress-notify-interval=5s \\
+  --feature-gates=InitialCorruptCheck=true \\
   --auto-compaction-mode=periodic \\
   --auto-compaction-retention=1h
 Restart=always
@@ -132,6 +136,6 @@ echo ""
 echo "=== etcd node ${NODE_NAME} bootstrap complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Run this script on etcd-2 and etcd-3 (with their respective IPs)"
+echo "  1. Run this script on controlplane02 and controlplane03 (with their respective IPs)"
 echo "  2. Verify cluster: etcdctl member list --write-out=table"
 echo "  3. Verify health:  etcdctl endpoint health"
