@@ -156,7 +156,7 @@ ETCDCTL_API=2 etcdctl get foo
 ### Cài từ binary
 
 ```bash
-ETCD_VERSION="v3.5.12"
+ETCD_VERSION="v3.6.8"
 curl -fsSL "https://github.com/etcd-io/etcd/releases/download/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz" \
   | tar xz -C /tmp
 sudo cp /tmp/etcd-${ETCD_VERSION}-linux-amd64/etcd /usr/local/bin/
@@ -164,10 +164,10 @@ sudo cp /tmp/etcd-${ETCD_VERSION}-linux-amd64/etcdctl /usr/local/bin/
 
 # Kiểm tra
 etcd --version
-# etcd Version: 3.5.12
+# etcd Version: 3.6.8
 
 etcdctl version
-# etcdctl Version: 3.5.12
+# etcdctl Version: 3.6.8
 ```
 
 ### Cài qua package manager (Ubuntu)
@@ -356,7 +356,7 @@ spec:
     - --snapshot-count=10000
     - --trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt
     - --watch-progress-notify-interval=5s
-    image: registry.k8s.io/etcd:3.5.12-0
+    image: registry.k8s.io/etcd:3.6.8-0
     imagePullPolicy: IfNotPresent
     livenessProbe:
       failureThreshold: 8
@@ -435,7 +435,7 @@ spec:
 | `priorityClassName: system-node-critical` | Priority cao nhất — không bị evict |
 | `seccompProfile: RuntimeDefault` | Security profile — giới hạn syscalls |
 | `resources: requests` | CPU 100m, memory 100Mi — minimum guarantee |
-| `image: registry.k8s.io/etcd:3.5.12-0` | etcd image từ Kubernetes registry |
+| `image: registry.k8s.io/etcd:3.6.8-0` | etcd image từ Kubernetes registry |
 
 ### External etcd
 

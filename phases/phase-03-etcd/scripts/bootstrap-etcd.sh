@@ -21,7 +21,7 @@ NODE_IP="${3:?Missing node-ip}"
 EXISTING_IP="${4:-}"
 CERT_DIR="${5:-/etc/etcd}"
 DATA_DIR="/var/lib/etcd"
-ETCD_VERSION="v3.5.12"
+ETCD_VERSION="v3.6.8"
 CLUSTER_TOKEN="etcd-cluster-2026"
 
 if [ "${MODE}" != "init" ] && [ "${MODE}" != "join" ]; then

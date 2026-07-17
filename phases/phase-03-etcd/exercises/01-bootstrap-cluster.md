@@ -51,7 +51,7 @@ certs/
 Thực hiện trên **mỗi node** (controlplane01, controlplane02, controlplane03):
 
 ```bash
-ETCD_VERSION="v3.5.12"
+ETCD_VERSION="v3.6.8"
 curl -fsSL "https://github.com/etcd-io/etcd/releases/download/${ETCD_VERSION}/etcd-${ETCD_VERSION}-linux-amd64.tar.gz" \
   | tar xz -C /tmp
 sudo cp /tmp/etcd-${ETCD_VERSION}-linux-amd64/etcd /usr/local/bin/
@@ -59,10 +59,10 @@ sudo cp /tmp/etcd-${ETCD_VERSION}-linux-amd64/etcdctl /usr/local/bin/
 
 # Kiểm tra
 etcd --version
-# etcd Version: 3.5.12
+# etcd Version: 3.6.8
 ```
 
-**Kiểm tra**: `etcd --version` hiện 3.5.12 trên cả 3 node.
+**Kiểm tra**: `etcd --version` hiện 3.6.8 trên cả 3 node.
 
 ## Bước 2: Copy cert vào mỗi node
 
@@ -402,9 +402,9 @@ etcdctl endpoint status --write-out=table
 # +----------------+------------------+---------+---------+-----------+------------+
 # |    ENDPOINT    |        ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER |
 # +----------------+------------------+---------+---------+-----------+------------+
-# | 192.168.56.11:2379  | 8e9e05c52164694d |  3.5.12 |  20 KB  |      true |      false |
-# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  3.5.12 |  20 KB  |     false |      false |
-# | 192.168.56.13:2379  | fd422379fda50e85 |  3.5.12 |  20 KB  |     false |      false |
+# | 192.168.56.11:2379  | 8e9e05c52164694d |  3.6.8  |  20 KB  |      true |      false |
+# | 192.168.56.12:2379  | 91bc3c398fb3c146 |  3.6.8  |  20 KB  |     false |      false |
+# | 192.168.56.13:2379  | fd422379fda50e85 |  3.6.8  |  20 KB  |     false |      false |
 # +----------------+------------------+---------+---------+-----------+------------+
 ```
 
