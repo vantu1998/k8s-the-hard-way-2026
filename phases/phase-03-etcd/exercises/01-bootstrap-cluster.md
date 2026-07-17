@@ -80,22 +80,22 @@ scp certs/etcd-ca.pem controlplane02:/tmp/etcd-ca.pem
 scp certs/etcd-ca.pem controlplane03:/tmp/etcd-ca.pem
 
 # Copy server + peer cert cho controlplane01
-scp certs/etcd-server-controlplane01.pem controlplane01:/tmp/etcd-server.pem
-scp certs/etcd-server-controlplane01-key.pem controlplane01:/tmp/etcd-server-key.pem
-scp certs/etcd-peer-controlplane01.pem controlplane01:/tmp/etcd-peer.pem
-scp certs/etcd-peer-controlplane01-key.pem controlplane01:/tmp/etcd-peer-key.pem
+scp certs/etcd-server-1.pem controlplane01:/tmp/etcd-server.pem
+scp certs/etcd-server-1-key.pem controlplane01:/tmp/etcd-server-key.pem
+scp certs/etcd-peer-1.pem controlplane01:/tmp/etcd-peer.pem
+scp certs/etcd-peer-1-key.pem controlplane01:/tmp/etcd-peer-key.pem
 
 # Copy server + peer cert cho controlplane02
-scp certs/etcd-server-controlplane02.pem controlplane02:/tmp/etcd-server.pem
-scp certs/etcd-server-controlplane02-key.pem controlplane02:/tmp/etcd-server-key.pem
-scp certs/etcd-peer-controlplane02.pem controlplane02:/tmp/etcd-peer.pem
-scp certs/etcd-peer-controlplane02-key.pem controlplane02:/tmp/etcd-peer-key.pem
+scp certs/etcd-server-2.pem controlplane02:/tmp/etcd-server.pem
+scp certs/etcd-server-2-key.pem controlplane02:/tmp/etcd-server-key.pem
+scp certs/etcd-peer-2.pem controlplane02:/tmp/etcd-peer.pem
+scp certs/etcd-peer-2-key.pem controlplane02:/tmp/etcd-peer-key.pem
 
 # Copy server + peer cert cho controlplane03
-scp certs/etcd-server-controlplane03.pem controlplane03:/tmp/etcd-server.pem
-scp certs/etcd-server-controlplane03-key.pem controlplane03:/tmp/etcd-server-key.pem
-scp certs/etcd-peer-controlplane03.pem controlplane03:/tmp/etcd-peer.pem
-scp certs/etcd-peer-controlplane03-key.pem controlplane03:/tmp/etcd-peer-key.pem
+scp certs/etcd-server-3.pem controlplane03:/tmp/etcd-server.pem
+scp certs/etcd-server-3-key.pem controlplane03:/tmp/etcd-server-key.pem
+scp certs/etcd-peer-3.pem controlplane03:/tmp/etcd-peer.pem
+scp certs/etcd-peer-3-key.pem controlplane03:/tmp/etcd-peer-key.pem
 
 # Trên mỗi node: move cert vào /etc/etcd/
 ssh controlplane01 "sudo mv /tmp/etcd-*.pem /etc/etcd/ && sudo chmod 600 /etc/etcd/*-key.pem"
