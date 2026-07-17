@@ -468,9 +468,19 @@ spec:
 
 > **Khác biệt init vs join manifest**:
 > - **Init**: `--initial-cluster=controlplane01=...` (chỉ node đó), không có `--initial-cluster-state` (default `new`)
-> - **Join**: `--initial-cluster=controlplane01=...,controlplane02=...` (full list từ `member add`), `--initial-cluster-state=existing`
+> - **Join (lần đầu)**: `--initial-cluster=controlplane01=...,controlplane02=...` (full list từ `member add`), `--initial-cluster-state=existing`
 >
 > Source: `kubeadm/app/phases/etcd/local.go` — `getEtcdCommand()` function.
+
+> **Tại sao trên cluster đang chạy, manifest join node chỉ có node đó?**
+>
+> `--initial-cluster` và `--initial-cluster-state` **chỉ có tác dụng khi data dir trống** (lần start đầu tiên). Sau khi etcd đã có data trong `/var/lib/etcd`, nó đọc cluster membership từ WAL/snap → hai flag này bị ignore.
+>
+> kubeadm có 2 hàm viết manifest:
+> - `CreateStackedEtcdStaticPodManifestFile` (kubeadm join) → full cluster list + `existing`
+> - `CreateLocalEtcdStaticPodManifestFile` (kubeadm upgrade) → chỉ node đó, không `existing`
+>
+> Khi `kubeadm upgrade` chạy sau, nó rewrite manifest chỉ với node đó — vẫn hoạt động vì etcd đã có data. Đó là lý do trên cluster đang chạy, manifest join node chỉ có node đó.
 
 ### Giải thích các thành phần trong manifest
 
