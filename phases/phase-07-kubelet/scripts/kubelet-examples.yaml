@@ -1,0 +1,269 @@
+# Kubelet Examples — YAML manifests for all exercises
+#
+# Apply individual sections or the whole file:
+#   kubectl apply -f kubelet-examples.yaml
+
+# =============================================================================
+# Exercise 01: Static pod manifest (place in /etc/kubernetes/manifests/)
+# =============================================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-static-pod
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    ports:
+    - containerPort: 80
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# =============================================================================
+# Exercise 03: Pod with HTTP liveness probe
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-http
+  labels:
+    app: liveness-http
+spec:
+  containers:
+  - name: app
+    image: registry.k8s.io/liveness
+    args:
+    - /server
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 3
+
+# =============================================================================
+# Exercise 03: Pod with TCP liveness probe
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-tcp
+spec:
+  containers:
+  - name: nginx
+    image: nginx
+    livenessProbe:
+      tcpSocket:
+        port: 80
+      periodSeconds: 5
+      failureThreshold: 3
+
+# =============================================================================
+# Exercise 03: Pod with exec liveness probe
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: liveness-exec
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    args:
+    - /bin/sh
+    - -c
+    - touch /tmp/healthy; sleep 30; rm /tmp/healthy; sleep 600
+    livenessProbe:
+      exec:
+        command:
+        - cat
+        - /tmp/healthy
+      periodSeconds: 5
+      failureThreshold: 3
+
+# =============================================================================
+# Exercise 03: Pod with startup + liveness probe
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: startup-probe
+spec:
+  containers:
+  - name: app
+    image: registry.k8s.io/liveness
+    args:
+    - /server
+    startupProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      failureThreshold: 30
+      periodSeconds: 10
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: 8080
+      periodSeconds: 5
+      failureThreshold: 3
+
+# =============================================================================
+# Exercise 03: Pod with readiness probe (check dependency)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: readiness-http
+  labels:
+    app: readiness-http
+spec:
+  containers:
+  - name: app
+    image: nginx
+    readinessProbe:
+      httpGet:
+        path: /
+        port: 80
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      failureThreshold: 3
+      successThreshold: 1
+
+# =============================================================================
+# Exercise 04: Pod with preStop hook + graceful shutdown
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: graceful-shutdown
+  labels:
+    app: graceful-shutdown
+spec:
+  terminationGracePeriodSeconds: 60
+  containers:
+  - name: nginx
+    image: nginx
+    ports:
+    - containerPort: 80
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - sh
+          - -c
+          - "nginx -s quit; sleep 10"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# =============================================================================
+# Exercise 04: Pod with short grace period (SIGKILL test)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: slow-shutdown
+spec:
+  terminationGracePeriodSeconds: 10
+  containers:
+  - name: app
+    image: busybox
+    args:
+    - /bin/sh
+    - -c
+    - "trap 'echo SIGTERM; sleep 30' TERM; sleep 600"
+    lifecycle:
+      preStop:
+        exec:
+          command: ["sleep", "5"]
+
+# =============================================================================
+# Exercise 04: Pod with preStop HTTP hook
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: prestop-http
+spec:
+  terminationGracePeriodSeconds: 30
+  containers:
+  - name: nginx
+    image: nginx
+    lifecycle:
+      preStop:
+        httpGet:
+          path: /
+          port: 80
+
+# =============================================================================
+# Deployment with liveness + readiness + startup probe (production pattern)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-with-probes
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-with-probes
+  template:
+    metadata:
+      labels:
+        app: web-with-probes
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: nginx
+        image: nginx:1.25
+        ports:
+        - containerPort: 80
+        startupProbe:
+          httpGet:
+            path: /
+            port: 80
+          failureThreshold: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          periodSeconds: 5
+          failureThreshold: 3
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sh", "-c", "nginx -s quit; sleep 5"]
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
