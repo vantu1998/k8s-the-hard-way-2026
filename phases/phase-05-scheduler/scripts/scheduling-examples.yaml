@@ -1,0 +1,395 @@
+# Scheduling Examples — YAML manifests for all exercises
+#
+# Apply individual sections or the whole file:
+#   kubectl apply -f scheduling-examples.yaml
+
+# =============================================================================
+# PriorityClasses
+# =============================================================================
+
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000000
+description: "High priority — can preempt low priority pods"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority
+value: 100
+description: "Low priority — can be preempted"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: non-preempting-high
+value: 900000
+preemptionPolicy: Never
+description: "High priority but does not preempt others"
+
+# =============================================================================
+# PodDisruptionBudget
+# =============================================================================
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: web
+
+# =============================================================================
+# Example 1: nodeSelector (hard constraint)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-nodeselector
+  labels:
+    app: nginx-nodeselector
+spec:
+  nodeSelector:
+    zone: a
+  containers:
+  - name: nginx
+    image: nginx
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# =============================================================================
+# Example 2: nodeAffinity required (multiple values)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-nodeaffinity-required
+  labels:
+    app: nginx-nodeaffinity-required
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: zone
+            operator: In
+            values:
+            - a
+            - b
+  containers:
+  - name: nginx
+    image: nginx
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# =============================================================================
+# Example 3: nodeAffinity preferred (weighted)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-nodeaffinity-preferred
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: nginx-nodeaffinity-preferred
+  template:
+    metadata:
+      labels:
+        app: nginx-nodeaffinity-preferred
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: zone
+                operator: In
+                values:
+                - a
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: zone
+                operator: In
+                values:
+                - b
+      containers:
+      - name: nginx
+        image: nginx
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+# =============================================================================
+# Example 4: Toleration for taint dedicated=gpu:NoSchedule
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-pod
+  labels:
+    app: gpu-pod
+spec:
+  tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "gpu"
+    effect: "NoSchedule"
+  nodeSelector:
+    accelerator: nvidia
+  containers:
+  - name: ml-training
+    image: tensorflow/tensorflow:latest-gpu
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+
+# =============================================================================
+# Example 5: podAntiAffinity required (1 pod per node)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-anti-affinity-required
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-anti-affinity-required
+  template:
+    metadata:
+      labels:
+        app: web-anti-affinity-required
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: web-anti-affinity-required
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: nginx
+        image: nginx
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+# =============================================================================
+# Example 6: podAntiAffinity preferred (best-effort spread)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-anti-affinity-preferred
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: web-anti-affinity-preferred
+  template:
+    metadata:
+      labels:
+        app: web-anti-affinity-preferred
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: web-anti-affinity-preferred
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: nginx
+        image: nginx
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+# =============================================================================
+# Example 7: TopologySpreadConstraints (strict spread)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-topology-spread
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: web-topology-spread
+  template:
+    metadata:
+      labels:
+        app: web-topology-spread
+    spec:
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: web-topology-spread
+      containers:
+      - name: nginx
+        image: nginx
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+# =============================================================================
+# Example 8: podAffinity (co-locate web with cache)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-with-cache
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      affinity:
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: cache
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: nginx
+        image: nginx
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache
+  template:
+    metadata:
+      labels:
+        app: cache
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+# =============================================================================
+# Example 9: Priority preemption (high evicts low)
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: low-priority-fill
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: low-priority-fill
+  template:
+    metadata:
+      labels:
+        app: low-priority-fill
+    spec:
+      priorityClassName: low-priority
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-priority-pod
+spec:
+  priorityClassName: high-priority
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+
+# =============================================================================
+# Example 10: Toleration with tolerationSeconds
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: toleration-seconds-pod
+spec:
+  tolerations:
+  - key: "node.kubernetes.io/not-ready"
+    operator: "Exists"
+    effect: "NoExecute"
+    tolerationSeconds: 60
+  - key: "node.kubernetes.io/unreachable"
+    operator: "Exists"
+    effect: "NoExecute"
+    tolerationSeconds: 60
+  containers:
+  - name: nginx
+    image: nginx
