@@ -1,0 +1,251 @@
+# CRI Examples — YAML manifests for all exercises
+#
+# Apply individual sections or the whole file:
+#   kubectl apply -f cri-examples.yaml
+
+# =============================================================================
+# Exercise 02: Single container pod for crictl inspect
+# =============================================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: inspect-demo
+  labels:
+    app: inspect-demo
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    ports:
+    - containerPort: 80
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# =============================================================================
+# Exercise 03: Pod with imagePullPolicy: Never (use local cache)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: never-pull
+spec:
+  containers:
+  - name: busybox
+    image: busybox:1.36
+    imagePullPolicy: Never
+    command: ["sh", "-c", "echo 'Hello from local image'; sleep 3600"]
+
+# =============================================================================
+# Exercise 03: Pod with imagePullPolicy: Always (check registry)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: always-pull
+spec:
+  containers:
+  - name: busybox
+    image: busybox:1.36
+    imagePullPolicy: Always
+    command: ["sh", "-c", "echo 'Always pull'; sleep 3600"]
+
+# =============================================================================
+# Exercise 03: Pod with imagePullPolicy: IfNotPresent (default for versioned)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ifnotpresent
+spec:
+  containers:
+  - name: busybox
+    image: busybox:1.36
+    imagePullPolicy: IfNotPresent
+    command: ["sh", "-c", "echo 'IfNotPresent'; sleep 3600"]
+
+# =============================================================================
+# Exercise 04: Multi-container pod with shared volume
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-container
+  labels:
+    app: multi-container
+spec:
+  volumes:
+  - name: shared-data
+    emptyDir: {}
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    volumeMounts:
+    - name: shared-data
+      mountPath: /usr/share/nginx/html
+    ports:
+    - containerPort: 80
+  - name: sidecar
+    image: busybox:1.36
+    volumeMounts:
+    - name: shared-data
+      mountPath: /var/log/shared
+    command:
+    - sh
+    - -c
+    - |
+      while true; do
+        echo "<h1>Hello from sidecar at $(date)</h1>" > /var/log/shared/index.html
+        sleep 10
+      done
+
+# =============================================================================
+# Exercise 04: Multi-container pod — ambassador pattern
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ambassador-pattern
+  labels:
+    app: ambassador-pattern
+spec:
+  containers:
+  - name: app
+    image: busybox:1.36
+    command: ["sh", "-c", "while true; do wget -qO- localhost:8080; sleep 5; done"]
+  - name: ambassador
+    image: nginx:1.25
+    ports:
+    - containerPort: 8080
+    # Ambassador proxies app requests to external service
+    # App talks to localhost:8080 → ambassador → external
+
+# =============================================================================
+# Exercise 05: Pod for strace CRI calls
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: strace-demo
+  labels:
+    app: strace-demo
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+# =============================================================================
+# Pod with init container (sandbox + init + app)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: init-container-demo
+  labels:
+    app: init-container-demo
+spec:
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  initContainers:
+  - name: init
+    image: busybox:1.36
+    volumeMounts:
+    - name: workdir
+      mountPath: /work
+    command:
+    - sh
+    - -c
+    - "echo 'init done' > /work/ready.txt"
+  containers:
+  - name: app
+    image: nginx:1.25
+    volumeMounts:
+    - name: workdir
+      mountPath: /usr/share/nginx/html
+
+# =============================================================================
+# Pod with resource limits (QoS: Guaranteed)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: guaranteed-qos
+  labels:
+    app: guaranteed-qos
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 200m          # request == limit → Guaranteed
+        memory: 256Mi      # request == limit → Guaranteed
+
+# =============================================================================
+# Pod with resource limits (QoS: Burstable)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: burstable-qos
+  labels:
+    app: burstable-qos
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m          # request < limit → Burstable
+        memory: 256Mi      # request < limit → Burstable
+
+# =============================================================================
+# Pod with resource limits (QoS: BestEffort)
+# =============================================================================
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: besteffort-qos
+  labels:
+    app: besteffort-qos
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    # No resources → BestEffort (lowest priority, evict first)

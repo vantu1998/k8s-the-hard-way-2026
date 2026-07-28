@@ -1,0 +1,106 @@
+# containerd configuration for Kubernetes (CRI)
+#
+# Place at: /etc/containerd/config.toml
+# Restart: sudo systemctl restart containerd
+#
+# Key settings:
+#   - SystemdCgroup = true (must match kubelet cgroupDriver: systemd)
+#   - sandbox_image = registry.k8s.io/pause:3.9
+#   - snapshotter = overlayfs
+
+version = 2
+
+# --- Root directory for containerd data ---
+root = "/var/lib/containerd"
+state = "/run/containerd"
+
+# --- OOM score ---
+oom_score = -999
+
+# --- gRPC (containerd API, not CRI) ---
+[grpc]
+  address = "/run/containerd/containerd.sock"
+  uid = 0
+  gid = 0
+
+# --- CRI plugin (kubelet connects here) ---
+[plugins."io.containerd.grpc.v1.cri"]
+  # CRI socket (kubelet --container-runtime-endpoint)
+  socket_path = "/run/containerd/containerd.sock"
+
+  # Pause container image (sandbox)
+  sandbox_image = "registry.k8s.io/pause:3.9"
+
+  # Max container log size (default: 16MB)
+  max_container_log_line_size = 16384
+
+  # --- CNI configuration ---
+  [plugins."io.containerd.grpc.v1.cri".cni]
+    bin_dir = "/opt/cni/bin"
+    conf_dir = "/etc/cni/net.d"
+    conf_template = ""
+
+  # --- Container runtime config ---
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+    # Snapshotter (storage driver)
+    snapshotter = "overlayfs"
+
+    # Default runtime
+    default_runtime_name = "runc"
+
+    # No pivot root (for environments without pivot_root)
+    no_pivot = false
+
+    # --- Runtime: runc ---
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      runtime_type = "io.containerd.runc.v2"
+      # Pod-level isolation
+      pod_annotations = []
+      container_annotations = []
+      # OCI hooks
+      privileged_without_host_devices = false
+      base_runtime_spec = ""
+
+      # runc options
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+        # systemd cgroup driver (MUST match kubelet)
+        SystemdCgroup = true
+
+    # --- Runtime: kata (optional, VM-based sandbox) ---
+    # [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata]
+    #   runtime_type = "io.containerd.kata.v2"
+    #   pod_annotations = ["io.katacontainers.*"]
+
+    # --- Runtime: gVisor (optional, kernel sandbox) ---
+    # [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.gvisor]
+    #   runtime_type = "io.containerd.runsc.v1"
+
+  # --- Image registry config ---
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    # Config path for registry mirrors
+    config_path = "/etc/containerd/certs.d"
+
+# --- Image pull behavior ---
+[plugins."io.containerd.grpc.v1.cri".image_decryption]
+  key_model = "node"
+
+# --- Snapshotter (overlayfs) ---
+[plugins."io.containerd.snapshotter.v1.overlayfs"]
+  rootfs = "/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs/snapshots"
+  upperdir = ""
+
+# --- Content store (image layers) ---
+[plugins."io.containerd.content.v1.content"]
+  root = "/var/lib/containerd/io.containerd.content.v1.content"
+
+# --- Diff service ---
+[plugins."io.containerd.diff.v1.diff"]
+  root = "/var/lib/containerd/io.containerd.diff.v1.diff"
+
+# --- GC (containerd internal, not kubelet image GC) ---
+[plugins."io.containerd.gc.v1.scheduler"]
+  pause_threshold = 0.02
+  deletion_threshold = 0
+  mutation_threshold = 100
+  schedule_delay = "0s"
+  startup_delay = "100ms"
