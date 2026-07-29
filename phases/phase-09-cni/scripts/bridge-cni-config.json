@@ -1,0 +1,52 @@
+{
+  "cniVersion": "1.0.0",
+  "name": "k8s-bridge",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cbr0",
+      "isGateway": true,
+      "isDefaultGateway": true,
+      "isBroadcast": true,
+      "hairpinMode": false,
+      "ipMasq": false,
+      "mtu": 1450,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [
+            {
+              "subnet": "10.244.1.0/24",
+              "rangeStart": "10.244.1.10",
+              "rangeEnd": "10.244.1.200"
+            }
+          ]
+        ],
+        "routes": [
+          { "dst": "0.0.0.0/0" }
+        ]
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {
+        "portMappings": true
+      },
+      "snat": true,
+      "minPort": 30000,
+      "maxPort": 32767
+    },
+    {
+      "type": "firewall",
+      "backend": "iptables",
+      "iptablesAdminChainName": "KUBE-CNI-FIREWALL"
+    },
+    {
+      "type": "tuning",
+      "mtu": 1450
+    },
+    {
+      "type": "loopback"
+    }
+  ]
+}
