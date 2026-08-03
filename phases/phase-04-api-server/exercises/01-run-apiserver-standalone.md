@@ -105,8 +105,18 @@ kubectl config use-context kubernetes-admin@k8s-lab \
 
 ## Bước 3: Chạy kube-apiserver
 
+> **QUAN TRỌNG**: Nếu etcd có dữ liệu cũ từ lần chạy trước, xóa data trước để tránh lỗi "illegal base64 data":
+> ```bash
+> export ETCDCTL_API=3
+> export ETCDCTL_ENDPOINTS=https://127.0.0.1:2379
+> export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+> export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/healthcheck-client.crt
+> export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/healthcheck-client.key
+> etcdctl del --prefix /registry/
+> ```
+
 ```bash
-sudo kube-apiserver \
+nohup sudo kube-apiserver \
   --etcd-servers=https://127.0.0.1:2379 \
   --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt \
   --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt \
@@ -124,10 +134,15 @@ sudo kube-apiserver \
   --bind-address=0.0.0.0 \
   --secure-port=6443 \
   --allow-privileged=true \
-  --v=2 &
+  --v=2 > /tmp/kube-apiserver.log 2>&1 &
 ```
 
-> Chạy trong background (`&`) cho lab. Production chạy như systemd service hoặc static pod.
+> Chạy với `nohup` và redirect log để tránh bị disconnect terminal. Production chạy như systemd service hoặc static pod.
+
+**Kiểm tra log:**
+```bash
+tail -f /tmp/kube-apiserver.log
+```
 
 ### Giải thích flags
 
@@ -145,17 +160,22 @@ sudo kube-apiserver \
 
 ## Bước 4: Verify API Server chạy
 
+> **LƯU Ý**: Vì `--anonymous-auth=false`, curl không cert sẽ trả về 401. Dùng admin cert hoặc kubectl.
+
 ```bash
-# Health check
-curl -k https://127.0.0.1:6443/healthz
+# Health check với admin cert
+curl -k --cert /tmp/admin.pem --key /tmp/admin-key.pem \
+  https://127.0.0.1:6443/healthz
 # ok
 
-# Version
-curl -k https://127.0.0.1:6443/version
+# Version với admin cert
+curl -k --cert /tmp/admin.pem --key /tmp/admin-key.pem \
+  https://127.0.0.1:6443/version
 # {"major":"1","minor":"33","gitVersion":"v1.33.0",...}
 
-# API discovery
-curl -k https://127.0.0.1:6443/apis
+# API discovery với admin cert
+curl -k --cert /tmp/admin.pem --key /tmp/admin-key.pem \
+  https://127.0.0.1:6443/apis
 # {"kind":"APIGroupList","groups":[...]}
 ```
 
@@ -191,6 +211,27 @@ kubectl get pods -n default
 ```
 
 > Pod chạy vì container runtime trên node này đã cài (containerd). Nếu không có container runtime, pod sẽ pending.
+
+**LƯU Ý - STANDALONE MODE**: Trong môi trường standalone (không có controller-manager), bạn cần tạo:
+
+1. **Service Account default** cho mỗi namespace:
+```bash
+kubectl create serviceaccount default -n default
+kubectl create serviceaccount default -n kube-system
+```
+
+2. **ConfigMap kube-root-ca.crt** cho mỗi namespace:
+```bash
+kubectl create configmap kube-root-ca.crt \
+  --from-file=ca.crt=/etc/kubernetes/pki/ca.crt \
+  -n default
+
+kubectl create configmap kube-root-ca.crt \
+  --from-file=ca.crt=/etc/kubernetes/pki/ca.crt \
+  -n kube-system
+```
+
+Trong môi trường production, controller-manager sẽ tự động tạo các resource này.
 
 **Kiểm tra**: `kubectl get pods` hiển thị pod nginx.
 
@@ -256,10 +297,64 @@ curl -k https://127.0.0.1:6443/healthz
 ## Cleanup
 
 ```bash
+# Stop API Server
+sudo pkill kube-apiserver
+
 # Xóa data etcd (nếu muốn clean start)
+export ETCDCTL_API=3
+export ETCDCTL_ENDPOINTS=https://127.0.0.1:2379
+export ETCDCTL_CACERT=/etc/kubernetes/pki/etcd/ca.crt
+export ETCDCTL_CERT=/etc/kubernetes/pki/etcd/healthcheck-client.crt
+export ETCDCTL_KEY=/etc/kubernetes/pki/etcd/healthcheck-client.key
 etcdctl del --prefix /registry/
 
 # Hoặc giữ lại cho exercise 02+
+```
+
+## Troubleshooting
+
+### Lỗi "illegal base64 data at input byte 3"
+**Nguyên nhân**: etcd có dữ liệu cũ bị corrupted từ lần chạy trước.
+**Khắc phục**: Xóa data trong etcd trước khi chạy API Server:
+```bash
+etcdctl del --prefix /registry/
+```
+
+### Lỗi "Unauthorized" (401) khi curl
+**Nguyên nhân**: `--anonymous-auth=false` được bật.
+**Khắc phục**: Dùng admin cert hoặc kubectl:
+```bash
+curl -k --cert /tmp/admin.pem --key /tmp/admin-key.pem https://127.0.0.1:6443/healthz
+# hoặc
+export KUBECONFIG=/tmp/admin.kubeconfig
+kubectl get namespaces
+```
+
+### Lỗi "serviceaccount default not found"
+**Nguyên nhân**: Controller-manager không chạy (standalone mode).
+**Khắc phục**: Tạo service account thủ công:
+```bash
+kubectl create serviceaccount default -n default
+kubectl create serviceaccount default -n kube-system
+```
+
+### Lỗi "configmap kube-root-ca.crt not found"
+**Nguyên nhân**: Controller-manager không chạy (standalone mode).
+**Khắc phục**: Tạo configmap thủ công:
+```bash
+kubectl create configmap kube-root-ca.crt \
+  --from-file=ca.crt=/etc/kubernetes/pki/ca.crt \
+  -n default
+```
+
+### Lỗi "informer-sync failed"
+**Nguyên nhân**: etcd có dữ liệu cũ hoặc API Server không kết nối được etcd.
+**Khắc phục**: Kiểm tra etcd health và xóa data cũ.
+
+### API Server không chạy ở background
+**Khắc phục**: Dùng `nohup` và redirect log:
+```bash
+nohup sudo kube-apiserver [flags] > /tmp/kube-apiserver.log 2>&1 &
 ```
 
 ## Câu hỏi tự kiểm tra
