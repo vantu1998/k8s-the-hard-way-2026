@@ -32,6 +32,10 @@ gen_ca() {
 {"CN":"${cn}","key":{"algo":"rsa","size":2048},"names":[{"CN":"${cn}"}],"ca":{"expiry":"${CA_EXPIRY}"}}
 EOF
     cfssl gencert -initca "${CERT_DIR}/${name}-csr.json" | cfssljson -bare "${CERT_DIR}/${name}"
+    
+    # Rename for standard k8s formats
+    mv "${CERT_DIR}/${name}.pem" "${CERT_DIR}/${name}.crt"
+    mv "${CERT_DIR}/${name}-key.pem" "${CERT_DIR}/${name}.key"
 }
 
 gen_cert() {
@@ -40,18 +44,22 @@ gen_cert() {
 {"CN":"${cn}","hosts":${hosts},"key":{"algo":"rsa","size":2048},"names":${names}}
 EOF
     cfssl gencert \
-        -ca="${CERT_DIR}/${ca_name}.pem" \
-        -ca-key="${CERT_DIR}/${ca_name}-key.pem" \
+        -ca="${CERT_DIR}/${ca_name}.crt" \
+        -ca-key="${CERT_DIR}/${ca_name}.key" \
         -config="${CERT_DIR}/ca-config.json" \
         -profile="${profile}" \
         "${CERT_DIR}/${name}-csr.json" | cfssljson -bare "${CERT_DIR}/${name}"
+        
+    # Rename for standard k8s formats
+    mv "${CERT_DIR}/${name}.pem" "${CERT_DIR}/${name}.crt"
+    mv "${CERT_DIR}/${name}-key.pem" "${CERT_DIR}/${name}.key"
 }
 
 verify_cert() {
-    if openssl verify -CAfile "${CERT_DIR}/$2.pem" "${CERT_DIR}/$1.pem" >/dev/null 2>&1; then
-        echo "  ✓ $1.pem"
+    if openssl verify -CAfile "${CERT_DIR}/$2.crt" "${CERT_DIR}/$1.crt" >/dev/null 2>&1; then
+        echo "  ✓ $1.crt"
     else
-        echo "  ✗ $1.pem FAILED"
+        echo "  ✗ $1.crt FAILED"
         exit 1
     fi
 }
@@ -79,9 +87,9 @@ EOF
 
 # --- 1. CAs ---
 echo "--- CAs ---"
-gen_ca ca "kubernetes-ca"; echo "  ✓ ca.pem"
-gen_ca etcd-ca "etcd-ca"; echo "  ✓ etcd-ca.pem"
-gen_ca front-proxy-ca "kubernetes-front-proxy-ca"; echo "  ✓ front-proxy-ca.pem"
+gen_ca ca "kubernetes-ca"; echo "  ✓ ca.crt"
+gen_ca etcd-ca "etcd-ca"; echo "  ✓ etcd-ca.crt"
+gen_ca front-proxy-ca "kubernetes-front-proxy-ca"; echo "  ✓ front-proxy-ca.crt"
 
 openssl genrsa -out "${CERT_DIR}/sa.key" 2048 2>/dev/null
 openssl rsa -in "${CERT_DIR}/sa.key" -pubout -out "${CERT_DIR}/sa.pub" 2>/dev/null
@@ -167,7 +175,7 @@ done
 # --- Summary ---
 echo ""
 echo "=== Done! ==="
-echo "  Total: $(ls ${CERT_DIR}/*.pem 2>/dev/null | wc -l) PEM files, $(ls ${CERT_DIR}/*.pub 2>/dev/null | wc -l) pub keys"
-echo "  Location: ${CERT_DIR}"
+echo "  Total: \$(ls \${CERT_DIR}/*.crt 2>/dev/null | wc -l) CRT files, \$(ls \${CERT_DIR}/*.pub 2>/dev/null | wc -l) pub keys"
+echo "  Location: \${CERT_DIR}"
 echo ""
-echo "  IMPORTANT: Secure all *-key.pem files! CA keys compromised = cluster compromised."
+echo "  IMPORTANT: Secure all *.key files! CA keys compromised = cluster compromised."
