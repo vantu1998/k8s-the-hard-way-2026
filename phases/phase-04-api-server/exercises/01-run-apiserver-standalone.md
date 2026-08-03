@@ -106,7 +106,7 @@ kubectl config use-context kubernetes-admin@k8s-lab \
 
 **Kiểm tra**: `/tmp/admin.kubeconfig` tồn tại, chứa cluster + user + context.
 
-## Bước 3: Chạy kube-apiserver HA
+## Bước 3: Chạy kube-apiserver HA (nohup — tạm thời)
 
 > **QUAN TRỌNG**: Nếu etcd có dữ liệu cũ từ lần chạy trước, xóa data trước để tránh lỗi. Chạy lệnh này trên master-1:
 > ```bash
@@ -123,7 +123,7 @@ Lưu ý quan trọng: Set biến `INTERNAL_IP` đúng với IP của máy hiện
 
 ```bash
 # Thiết lập IP của node hiện tại (Sửa 11 thành 12, 13 tương ứng trên các master khác)
-INTERNAL_IP="192.168.56.11"
+INTERNAL_IP="192.168.56.13"
 
 nohup sudo kube-apiserver \
   --advertise-address=${INTERNAL_IP} \
@@ -152,6 +152,103 @@ nohup sudo kube-apiserver \
 > ```bash
 > tail -f /tmp/kube-apiserver.log
 > ```
+
+## Bước 3b: Kill nohup và chuyển sang systemd service
+
+Sau khi đã verify API Server chạy ổn ở chế độ nohup, chúng ta sẽ chuyển sang chạy bằng **systemd** để:
+- Tự động restart khi process crash.
+- Tự start lại sau khi reboot VM.
+- Quản lý log tập trung qua `journalctl`.
+
+### Kill process nohup đang chạy
+
+Thực hiện trên **TẤT CẢ 3 master nodes**:
+
+```bash
+# Kill toàn bộ process kube-apiserver đang chạy
+sudo pkill kube-apiserver
+
+# Xác nhận process đã dừng (không có output = đã dừng)
+pgrep kube-apiserver
+```
+
+### Tạo systemd unit file
+
+Thực hiện trên **TẤT CẢ 3 master nodes** (thay `INTERNAL_IP` đúng với IP node hiện tại):
+
+```bash
+# master-1: 192.168.56.11 | master-2: 192.168.56.12 | master-3: 192.168.56.13
+INTERNAL_IP="192.168.56.13"
+
+cat <<EOF | sudo tee /etc/systemd/system/kube-apiserver.service
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/
+After=network.target etcd.service
+Wants=etcd.service
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/kube-apiserver \\
+  --advertise-address=${INTERNAL_IP} \\
+  --bind-address=0.0.0.0 \\
+  --apiserver-count=3 \\
+  --etcd-servers=https://127.0.0.1:2379 \\
+  --etcd-cafile=/etc/kubernetes/pki/etcd/ca.crt \\
+  --etcd-certfile=/etc/kubernetes/pki/apiserver-etcd-client.crt \\
+  --etcd-keyfile=/etc/kubernetes/pki/apiserver-etcd-client.key \\
+  --client-ca-file=/etc/kubernetes/pki/ca.crt \\
+  --tls-cert-file=/etc/kubernetes/pki/apiserver.crt \\
+  --tls-private-key-file=/etc/kubernetes/pki/apiserver.key \\
+  --service-account-key-file=/etc/kubernetes/pki/sa.pub \\
+  --service-account-signing-key-file=/etc/kubernetes/pki/sa.key \\
+  --service-account-issuer=https://kubernetes.default.svc.cluster.local \\
+  --service-cluster-ip-range=10.96.0.0/12 \\
+  --authorization-mode=Node,RBAC \\
+  --enable-admission-plugins=NodeRestriction,ServiceAccount \\
+  --anonymous-auth=false \\
+  --secure-port=6443 \\
+  --allow-privileged=true \\
+  --v=2
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+### Enable và start service
+
+```bash
+# Reload systemd để nhận unit file mới
+sudo systemctl daemon-reload
+
+# Enable service: tự start sau reboot
+sudo systemctl enable kube-apiserver
+
+# Start service ngay lập tức
+sudo systemctl start kube-apiserver
+
+# Kiểm tra status
+sudo systemctl status kube-apiserver
+```
+
+### Verify service chạy đúng
+
+```bash
+# Xem log real-time (Ctrl+C để thoát)
+sudo journalctl -u kube-apiserver -f
+
+# Health check
+curl -k --cert /tmp/admin.crt --key /tmp/admin-key.pem \
+  https://127.0.0.1:6443/healthz
+# ok
+```
+
+> **Tại sao dùng `Type=notify`?**  
+> `kube-apiserver` hỗ trợ systemd sd_notify — nó báo cho systemd biết khi nào đã sẵn sàng nhận request (thay vì systemd cứ đợi timeout). Nếu binary không hỗ trợ notify, đổi sang `Type=simple`.
 
 ### Giải thích các flags HA
 
@@ -232,7 +329,7 @@ etcdctl get --prefix /registry/ --keys-only
 
 1. Tắt `kube-apiserver` trên `master-1`:
 ```bash
-sudo pkill kube-apiserver
+sudo systemctl stop kube-apiserver
 ```
 2. Sửa file kubeconfig trỏ tới `master-2`:
 ```bash
@@ -245,14 +342,19 @@ kubectl get namespaces
 ```
 4. Bật lại API Server trên `master-1`:
 ```bash
-# (chạy lại lệnh nohup ở Bước 3 với INTERNAL_IP="192.168.56.11")
+sudo systemctl start kube-apiserver
 ```
 
 ## Cleanup
 
 ```bash
-# Stop API Server trên cả 3 nodes
-sudo pkill kube-apiserver
+# Stop và disable service trên cả 3 nodes
+sudo systemctl stop kube-apiserver
+sudo systemctl disable kube-apiserver
+
+# Xóa unit file
+sudo rm /etc/systemd/system/kube-apiserver.service
+sudo systemctl daemon-reload
 
 # Xóa data etcd (nếu muốn clean start)
 etcdctl del --prefix /registry/
