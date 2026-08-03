@@ -148,7 +148,13 @@ nohup sudo kube-apiserver \
   --v=2 > /tmp/kube-apiserver.log 2>&1 &
 ```
 
-> API Server sẽ tự động bầu cử endpoint reconciler thông qua etcd. Bạn có thể kiểm tra log của chúng:
+> **Endpoint Reconciler**: Mỗi API Server chạy một vòng lặp ~10-30s, tự đăng ký IP của mình vào
+> Service `kubernetes` (namespace `default`) trong etcd thông qua **lease TTL**.
+> Khi một node chết, lease hết hạn → IP tự bị xóa khỏi Endpoint.
+> Đây **không phải** leader election — không có "master" nào điều phối, mỗi API Server
+> tự chịu trách nhiệm duy trì IP của chính nó. Flag `--apiserver-count=3` cho reconciler
+> biết tổng số API Server để không bị ghi đè lẫn nhau.
+> Kiểm tra log:
 > ```bash
 > tail -f /tmp/kube-apiserver.log
 > ```
