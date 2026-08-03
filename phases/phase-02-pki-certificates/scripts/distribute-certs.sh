@@ -44,6 +44,25 @@ for i in 1 2 3; do
         "${CERT_DIR}/admin.crt" "${CERT_DIR}/admin.key" \
         "${CERT_DIR}/kubelet-${NODE_NAME}.crt" "${CERT_DIR}/kubelet-${NODE_NAME}.key" \
         "${USER}@${NODE_IP}:~/"
+
+    # Move certificates to system directories
+    ssh $SCP_OPTS "${USER}@${NODE_IP}" "
+        sudo mkdir -p /etc/kubernetes/pki/etcd /var/lib/kubelet/pki
+        sudo mv ~/ca.crt ~/ca.key ~/sa.pub ~/sa.key ~/apiserver.crt ~/apiserver.key ~/apiserver-kubelet-client.crt ~/apiserver-kubelet-client.key ~/front-proxy-ca.crt ~/front-proxy-ca.key ~/front-proxy-client.crt ~/front-proxy-client.key ~/scheduler.crt ~/scheduler.key ~/controller-manager.crt ~/controller-manager.key ~/admin.crt ~/admin.key /etc/kubernetes/pki/
+        sudo mv ~/etcd-ca.crt /etc/kubernetes/pki/etcd/ca.crt
+        sudo mv ~/etcd-ca.key /etc/kubernetes/pki/etcd/ca.key
+        sudo mv ~/etcd-server-${i}.crt /etc/kubernetes/pki/etcd/server.crt
+        sudo mv ~/etcd-server-${i}.key /etc/kubernetes/pki/etcd/server.key
+        sudo mv ~/etcd-peer-${i}.crt /etc/kubernetes/pki/etcd/peer.crt
+        sudo mv ~/etcd-peer-${i}.key /etc/kubernetes/pki/etcd/peer.key
+        sudo mv ~/etcd-healthcheck-client.crt /etc/kubernetes/pki/etcd/healthcheck-client.crt
+        sudo mv ~/etcd-healthcheck-client.key /etc/kubernetes/pki/etcd/healthcheck-client.key
+        sudo mv ~/kubelet-${NODE_NAME}.crt /var/lib/kubelet/pki/kubelet.crt
+        sudo mv ~/kubelet-${NODE_NAME}.key /var/lib/kubelet/pki/kubelet.key
+        sudo chown -R root:root /etc/kubernetes/pki /var/lib/kubelet/pki
+        sudo chmod -R 600 /etc/kubernetes/pki/*.key /etc/kubernetes/pki/etcd/*.key /var/lib/kubelet/pki/*.key
+        sudo chmod 644 /etc/kubernetes/pki/*.crt /etc/kubernetes/pki/etcd/*.crt /var/lib/kubelet/pki/*.crt /etc/kubernetes/pki/sa.pub
+    "
 done
 
 # Worker nodes
@@ -58,6 +77,17 @@ for i in 1 2; do
         "${CERT_DIR}/ca.crt" \
         "${CERT_DIR}/kubelet-${NODE_NAME}.crt" "${CERT_DIR}/kubelet-${NODE_NAME}.key" \
         "${USER}@${NODE_IP}:~/"
+
+    # Move certificates to system directories
+    ssh $SCP_OPTS "${USER}@${NODE_IP}" "
+        sudo mkdir -p /etc/kubernetes/pki /var/lib/kubelet/pki
+        sudo mv ~/ca.crt /etc/kubernetes/pki/
+        sudo mv ~/kubelet-${NODE_NAME}.crt /var/lib/kubelet/pki/kubelet.crt
+        sudo mv ~/kubelet-${NODE_NAME}.key /var/lib/kubelet/pki/kubelet.key
+        sudo chown -R root:root /etc/kubernetes/pki /var/lib/kubelet/pki
+        sudo chmod 600 /var/lib/kubelet/pki/kubelet.key
+        sudo chmod 644 /etc/kubernetes/pki/ca.crt /var/lib/kubelet/pki/kubelet.crt
+    "
 done
 
 echo "=== Done! ==="
